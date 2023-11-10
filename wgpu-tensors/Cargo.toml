@@ -1,0 +1,24 @@
+[package]
+name = "wgpu-tensors"
+version = "0.1.0"
+edition = "2021"
+authors = ["Janosch Gräf <janosch.graef@gmail.com>"]
+description = "Tensors in Rust using wgpu"
+repository = "https://github.com/jgraef/wgpu-tensors"
+# todo: add this once it's on docs.rs
+# documentation = ""
+categories = ["science"]
+readme = "../README.md"
+license = "MIT"
+
+[dependencies]
+tracing = "0.1"
+thiserror = "1.0"
+wgpu = "0.18"
+wgpu-async = "0.18"
+bytemuck = "1.13"
+askama = "0.12"
+async-lock = "3.0"
+ouroboros = "0.18"
+itertools = "0.11"
+concat-idents = "1.1"

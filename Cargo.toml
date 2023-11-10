@@ -1,0 +1,6 @@
+[workspace]
+members = [
+  "wgpu-tensors",
+  "wgpu-tensors-test",
+]
+resolver = "2"

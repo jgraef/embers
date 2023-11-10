@@ -1,0 +1,4 @@
+
+[[escaper]]
+path = "::askama::Text"
+extensions = ["wgsl"]

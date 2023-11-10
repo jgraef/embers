@@ -1,0 +1,23 @@
+[package]
+name = "wgpu-tensors-test"
+version = "0.1.0"
+edition = "2021"
+authors = ["Janosch Gräf <janosch.graef@gmail.com>"]
+description = "Tensors in Rust using wgpu"
+repository = "https://github.com/jgraef/wgpu-tensors"
+# todo: add this once it's on docs.rs
+# documentation = ""
+categories = ["science"]
+readme = "../README.md"
+license = "MIT"
+
+[dependencies]
+tracing = "0.1"
+tracing-subscriber = "0.3"
+dotenvy = "0.15"
+color-eyre = "0.6"
+tokio = { version = "1.33", features = ["rt-multi-thread", "macros"] }
+
+[dependencies.wgpu-tensors]
+version = "0.1.0"
+path = "../wgpu-tensors"
