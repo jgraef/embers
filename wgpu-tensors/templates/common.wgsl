@@ -17,7 +17,7 @@ const WORKGROUP_SIZE_Y = {{ info.work_group_size.y }}u;
 const WORKGROUP_SIZE_Z = {{ info.work_group_size.z }}u;
 const WORKGROUP_SIZE = {{ info.work_group_size.product() }}u;
 
-// num bindings excluding the info_data binding
+// num bindings excluding the parameter binding
 const NUM_BINDINGS = {{ info.declaration.bindings.len() }}u;
 
 
@@ -41,7 +41,7 @@ fn p_shaped(i: u32, axis: u32) -> i32 {
 }
 
 {% for parameter in info.declaration.parameters %}
-    const P_{{ parameter.name|upper }}: u32 = {{ loop.index - 1}}u;
+    const P_{{ parameter.name|upper }}: u32 = {{ loop.index - 1 }}u;
 
     {% match parameter.ty %}
         {% when KernelParameterType::Int %}
@@ -62,7 +62,10 @@ fn p_shaped(i: u32, axis: u32) -> i32 {
 fn project(input: i32, p_stride_in: u32, p_shape: u32, p_stride_out: u32) -> i32 {
     var output = 0;
     for (var axis = 0u; axis < dim(); axis++) {
-        output += (input / p_shaped(p_stride_in, axis)) % p_shaped(p_shape, axis) * p_shaped(p_stride_out, axis);
+        let stride_in = p_shaped(p_stride_in, axis);
+        if stride_in != 0 {
+            output += (input / stride_in) % p_shaped(p_shape, axis) * p_shaped(p_stride_out, axis);
+        }
     }
     return output;
 }

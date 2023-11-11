@@ -8,6 +8,7 @@ use std::{
     mem::size_of,
 };
 
+use derivative::Derivative;
 use itertools::Itertools;
 use wgpu::CommandEncoderDescriptor;
 
@@ -33,11 +34,18 @@ use crate::{
     gpu::Gpu,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Derivative)]
+#[derivative(Debug)]
 pub struct Tensor<const D: usize, T: Element> {
+    #[derivative(Debug = "ignore")]
     pub(crate) gpu: Gpu,
+
+    #[derivative(Debug = "ignore")]
     pub(crate) buffer: TensorBuffer,
+
     pub(crate) strider: Strider<D>,
+
+    #[derivative(Debug = "ignore")]
     _t: PhantomData<T>,
 }
 

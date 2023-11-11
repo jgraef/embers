@@ -259,28 +259,17 @@ impl<const D: usize> Strider<D> {
 
     pub fn reduce(&self, reduce_along: &[usize]) -> Result<ReduceResult<D>, InvalidAxis> {
         let mut reducer_shape = [1; D];
-        let mut reducer_strides = [0; D];
-        let mut reduced_shape = [1; D];
-        let mut reduced_strides = [0; D];
+        let mut reduced_shape = self.shape;
 
         for &axis in reduce_along {
             check_axis::<D>(axis)?;
-        }
-
-        for axis in 0..D {
-            if reduce_along.contains(&axis) {
-                reducer_shape[axis] = self.shape[axis];
-                reducer_strides[axis] = self.strides[axis];
-            }
-            else {
-                reduced_shape[axis] = self.shape[axis];
-                reduced_strides[axis] = self.strides[axis];
-            }
+            reducer_shape[axis] = self.shape[axis];
+            reduced_shape[axis] = 1;
         }
 
         let reducer = Strider {
             shape: reducer_shape,
-            strides: reducer_strides,
+            strides: contiguous_strides(&reducer_shape),
             offset: 0,
             shape_size: reducer_shape.size(),
             actual_size: self.actual_size,
@@ -290,7 +279,7 @@ impl<const D: usize> Strider<D> {
         let size = reduced_shape.size();
         let reduced = Strider {
             shape: reduced_shape,
-            strides: reduced_strides,
+            strides: contiguous_strides(&reduced_shape),
             offset: 0,
             shape_size: size,
             actual_size: size,

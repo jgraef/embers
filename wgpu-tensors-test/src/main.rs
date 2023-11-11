@@ -11,7 +11,7 @@ async fn main() -> Result<(), Error> {
     tracing_subscriber::fmt::init();
 
     let gpu = Gpu::new().await?;
-    let t1 = Tensor::from_data(&gpu, [2, 2], &[1, 2, 3, 4]);
+    let t1 = Tensor::from_data(&gpu, [2, 2], &[2, 3, 5, 7]);
     //let t2 = Tensor::from_data(&gpu, [1], &[2]);
     //let t2 = Tensor::from_data(&gpu, [2, 2], &[2, 2, 2, 2]);
     //let t3 = t1.add_broadcast(&t2).await?;
