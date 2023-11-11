@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, borrow::Cow};
 
 use askama::Template;
 
@@ -34,29 +34,32 @@ pub struct FoldKernel<T, R, A> {
     _t: PhantomData<(T, R, A)>,
 }
 
-pub trait Fold<R: Element, A: Element>: 'static {
+pub trait Fold: 'static {
     const LABEL: &'static str;
-
-    const STATE_TYPE: WgslType;
-
-    fn state_init() -> WgslValue;
-
     const APPLY: &'static str;
+    const EPILOG: &'static str;
+
+    fn state() -> Vec<StateVariable>;
 }
 
-impl<F: Fold<R, A>, R: Element, A: Element> Kernel for FoldKernel<F, R, A> {
-    const LABEL: &'static str = <F as Fold<R, A>>::LABEL;
+#[derive(Debug)]
+pub struct StateVariable {
+    pub name: Cow<'static, str>,
+    pub ty: WgslType,
+    pub init: Cow<'static, str>,
+}
+
+impl<F: Fold, R: Element, A: Element> Kernel for FoldKernel<F, R, A> {
+    const LABEL: &'static str = <F as Fold>::LABEL;
     type Template = FoldKernelTemplate;
     type Signature = FoldSignature<R, A>;
 
     fn template(info: KernelTemplateInfo) -> Self::Template {
         FoldKernelTemplate {
             info,
-            state: StateTemplate {
-                init: F::state_init(),
-                ty: F::STATE_TYPE,
-            },
+            state: F::state(),
             apply: F::APPLY,
+            epilog: F::EPILOG,
         }
     }
 }
@@ -65,14 +68,9 @@ impl<F: Fold<R, A>, R: Element, A: Element> Kernel for FoldKernel<F, R, A> {
 #[template(path = "fold.wgsl")]
 pub struct FoldKernelTemplate {
     info: KernelTemplateInfo,
-    state: StateTemplate,
+    state: Vec<StateVariable>,
     apply: &'static str,
-}
-
-#[derive(Debug)]
-pub struct StateTemplate {
-    init: WgslValue,
-    ty: WgslType,
+    epilog: &'static str,
 }
 
 pub struct FoldSignature<R: Element, A: Element>(PhantomData<(R, A)>);
@@ -135,22 +133,12 @@ impl<R: Element, A: Element> KernelSignature for FoldSignature<R, A> {
     }
 }
 
-pub struct Sum;
-
-impl<T: Element> Fold<T, T> for Sum {
-    const LABEL: &'static str = "Sum";
-
-    const STATE_TYPE: WgslType = T::WGSL_TYPE;
-
-    fn state_init() -> WgslValue {
-        T::ZERO.into()
-    }
-
-    const APPLY: &'static str = "reducer_state += x;";
-}
 
 impl<const D: usize, T: Element + Number> Tensor<D, T> {
-    pub async fn sum(&self, axis: &[usize]) -> Result<Tensor<D, T>, KernelError> {
+    pub async fn fold<F: Fold, R: Element>(
+        &self,
+        axis: &[usize],
+    ) -> Result<Tensor<D, R>, KernelError> {
         let ReduceResult { reducer, reduced } = self.strider.reduce(axis)?;
 
         let result = Tensor::allocate(&self.gpu, reduced.shape());
@@ -164,11 +152,96 @@ impl<const D: usize, T: Element + Number> Tensor<D, T> {
 
         tracing::debug!("args: {:#?}", args);
 
-        self.gpu
-            .run_kernel::<D, FoldKernel<Sum, T, T>>(args)
-            .await?;
+        self.gpu.run_kernel::<D, FoldKernel<F, R, T>>(args).await?;
 
         // todo: later this will reduce the rank of the result tensor.
         Ok(result.with_strider(reduced))
     }
 }
+
+
+macro_rules! fold_func_kernel {
+    ($kernel:ident, $state:expr, $apply:expr, $epilog:expr) => {
+        pub struct $kernel<T>(PhantomData<T>);
+
+        impl<T: Element> Fold for $kernel<T> {
+            const LABEL: &'static str = stringify!($kernel);
+            const APPLY: &'static str = $apply;
+            const EPILOG: &'static str = $epilog;
+        
+            fn state() -> Vec<StateVariable> {
+                $state
+            }
+        }                
+    };
+}
+
+fn element_to_wgsl_literal<T: Element>(x: T) -> String {
+    let wgsl_value: WgslValue = x.into();
+    wgsl_value.to_string()
+}
+
+macro_rules! fold_tensor_impl {
+    ($kernel:ident, $tensor_func:ident) => {
+        impl<const D: usize, T: Element + Number> Tensor<D, T> {
+            pub async fn $tensor_func(&self, axis: &[usize]) -> Result<Tensor<D, T>, KernelError> {
+                self.fold::<$kernel<T>, T>(axis).await
+            }
+        }
+    };
+}
+
+macro_rules! fold_func {
+    ($kernel:ident, $state:expr, $apply:expr, $epilog:expr, $tensor_func:ident) => {
+        fold_func_kernel!($kernel, $state, $apply, $epilog);
+        fold_tensor_impl!($kernel, $tensor_func);
+    };
+}
+
+fold_func!(
+    Sum,
+    vec![StateVariable {
+        name: "s_sum".into(),
+        ty: T::WGSL_TYPE,
+        init: element_to_wgsl_literal(T::ZERO).into(),
+    }],
+    "s_sum += x;",
+    "result[result_offset] = s_sum;",
+    sum
+);
+
+fold_func!(
+    Product,
+    vec![StateVariable {
+        name: "s_product".into(),
+        ty: T::WGSL_TYPE,
+        init: element_to_wgsl_literal(T::ONE).into(),
+    }],
+    "s_product *= x;",
+    "result[result_offset] = s_product;",
+    product
+);
+
+fold_func!(
+    Minimum,
+    vec![StateVariable {
+        name: "s_min".into(),
+        ty: T::WGSL_TYPE,
+        init: "input[input_offset]".into(),
+    }],
+    "if (x < s_min) { s_min = x; }",
+    "result[result_offset] = s_min;",
+    min
+);
+
+fold_func!(
+    Maximum,
+    vec![StateVariable {
+        name: "s_max".into(),
+        ty: T::WGSL_TYPE,
+        init: "input[input_offset]".into(),
+    }],
+    "if (x < s_max) { s_max = x; }",
+    "result[result_offset] = s_max;",
+    max
+);

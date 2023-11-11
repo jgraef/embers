@@ -35,7 +35,9 @@ fn main(
 
     // reduction
 
-    var reducer_state: {{ state.ty }} = {{ state.init }};
+    {% for var in state %}
+        var {{ var.name }}: {{ var.ty }} = {{ var.init }};
+    {% endfor %}
 
     for (var reducer_i = 0; reducer_i < reducer_size; reducer_i++) {
         // project along reduction axis
@@ -66,5 +68,5 @@ fn main(
             P_RESULT_STRIDES,
         );
 
-    result[result_offset] = reducer_state;
+    {{ epilog }}
 }
