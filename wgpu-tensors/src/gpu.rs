@@ -107,11 +107,11 @@ impl Gpu {
         }
     }
 
-    pub async fn run_kernel<'a, const D: usize, K: Kernel<S>, S: KernelSignature>(
+    pub async fn run_kernel<'a, const D: usize, K: Kernel>(
         &self,
-        args: &'a <S as KernelSignature>::Args<'a, D>,
+        args: <<K as Kernel>::Signature as KernelSignature>::Args<'a, D>,
     ) -> Result<(), KernelError> {
-        self.inner.executor.run_kernel::<D, K, S>(self, args).await
+        self.inner.executor.run_kernel::<D, K>(self, args).await
     }
 
     pub fn name(&self) -> String {

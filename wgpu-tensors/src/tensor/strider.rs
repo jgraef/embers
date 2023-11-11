@@ -239,12 +239,7 @@ impl<const D: usize> Strider<D> {
         let mut start = [0usize; D];
 
         for &axis in axis {
-            if axis >= D {
-                return Err(InvalidAxis {
-                    axis,
-                    dimensions: D,
-                });
-            }
+            check_axis::<D>(axis)?;
 
             strides[axis] *= -1;
             start[axis] = self.shape[axis];
@@ -262,8 +257,47 @@ impl<const D: usize> Strider<D> {
         })
     }
 
-    pub fn reduce(&self, _axis: usize) -> (Strider<D>, Strider<D>) {
-        todo!();
+    pub fn reduce(&self, reduce_along: &[usize]) -> Result<ReduceResult<D>, InvalidAxis> {
+        let mut reducer_shape = [1; D];
+        let mut reducer_strides = [0; D];
+        let mut reduced_shape = [1; D];
+        let mut reduced_strides = [0; D];
+
+        for &axis in reduce_along {
+            check_axis::<D>(axis)?;
+        }
+
+        for axis in 0..D {
+            if reduce_along.contains(&axis) {
+                reducer_shape[axis] = self.shape[axis];
+                reducer_strides[axis] = self.strides[axis];
+            }
+            else {
+                reduced_shape[axis] = self.shape[axis];
+                reduced_strides[axis] = self.strides[axis];
+            }
+        }
+
+        let reducer = Strider {
+            shape: reducer_shape,
+            strides: reducer_strides,
+            offset: 0,
+            shape_size: reducer_shape.size(),
+            actual_size: self.actual_size,
+            is_contiguous: false,
+        };
+
+        let size = reduced_shape.size();
+        let reduced = Strider {
+            shape: reduced_shape,
+            strides: reduced_strides,
+            offset: 0,
+            shape_size: size,
+            actual_size: size,
+            is_contiguous: true,
+        };
+
+        Ok(ReduceResult { reducer, reduced })
     }
 }
 
@@ -288,6 +322,11 @@ impl<const D: usize> Shape for Strider<D> {
     fn is_empty(&self) -> bool {
         D == 0
     }
+}
+
+pub struct ReduceResult<const D: usize> {
+    pub reducer: Strider<D>,
+    pub reduced: Strider<D>,
 }
 
 pub trait TensorIndex<const D: usize> {
@@ -455,4 +494,16 @@ fn calculate_actual_size<const D: usize>(shape: &[usize; D], strides: &[isize; D
         .zip(strides)
         .map(|(&shape, &stride)| (stride == 0).then_some(1).unwrap_or(shape))
         .product()
+}
+
+fn check_axis<const D: usize>(axis: usize) -> Result<(), InvalidAxis> {
+    if axis >= D {
+        Err(InvalidAxis {
+            axis,
+            dimensions: D,
+        })
+    }
+    else {
+        Ok(())
+    }
 }

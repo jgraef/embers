@@ -8,24 +8,19 @@ fn main(
     @builtin(global_invocation_id) global_id: vec3<u32>,
     @builtin(num_workgroups) num_workgroups: vec3<u32>,
 ) {
-    let global_id = global_id.y * (num_workgroups.x * WORKGROUP_SIZE_X) + global_id.x;
-    if global_id >= op_size() {
-        return;
-    }
+    let id = i32(global_id.y * (num_workgroups.x * WORKGROUP_SIZE_X) + global_id.x);
 
     // calculate the buffer indices for the tensor for the given global id
 
-    {% for binding in info.bindings %}
-        var index_{{ binding.name }}: i32 = binding_offset({{ loop.index - 1 }}u);
+    {% for binding in info.declaration.bindings %}
+        let index_{{ binding.name }} = p_{{ binding.name }}_offset()
+        + project(
+            id,
+            P_OP_STRIDES,
+            P_OP_SHAPE,
+            P_{{ binding.name|upper }}_STRIDES
+        );
     {% endfor %}
-
-    for (var axis: u32 = 0u; axis < dim(); axis++) {
-        let x = i32(global_id) / op_stride(axis);
-
-        {% for binding in info.bindings %}
-            index_{{ binding.name }} += x % binding_shape({{ loop.index - 1 }}u, axis) * binding_stride({{ loop.index - 1 }}u, axis);
-        {% endfor %}
-    }
 
     // perform the actual operation
 

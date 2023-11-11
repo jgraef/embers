@@ -1,9 +1,7 @@
-pub mod binary;
+pub mod binding;
 pub mod executor;
 pub mod map;
 pub mod reduce;
-pub mod trinary;
-pub mod unary;
 
 use std::{
     borrow::Cow,
@@ -12,70 +10,49 @@ use std::{
 
 use askama::Template;
 use wgpu::{
-    util::{
-        BufferInitDescriptor,
-        DeviceExt,
-    },
-    BindGroup,
-    BindGroupDescriptor,
-    BindGroupEntry,
-    BindGroupLayout,
-    BufferUsages,
     ComputePipeline,
     ComputePipelineDescriptor,
     ShaderModuleDescriptor,
     ShaderSource,
 };
 
+use self::binding::{
+    KernelBindingBuilder,
+    KernelDeclaration,
+};
 use crate::{
     element::{
         Element,
         WgslType,
     },
-    error::{
-        GpuMismatch,
-        KernelError,
-    },
+    error::KernelError,
     gpu::Gpu,
-    tensor::{
-        shape::Shape,
-        strider::{
-            contiguous_strides,
-            Strider,
-        },
-        Tensor,
-    },
+    tensor::shape::Shape,
 };
 
-pub trait KernelArgs<'a, const D: usize> {
-    fn create_bind_group(
-        &'a self,
-        bind_group_builder: &mut BindGroupBuilder<'a, '_, D>,
+pub trait KernelSignature {
+    const DECLARATION: KernelDeclaration;
+    type Args<'a, const D: usize>;
+
+    fn build_bind_group<'gpu, 'tensor, const D: usize>(
+        args: Self::Args<'tensor, D>,
+        builder: &mut KernelBindingBuilder<'gpu, 'tensor, D>,
     ) -> Result<(), KernelError>;
 
-    fn shape(&self) -> [usize; D];
+    fn task_partition<'a, const D: usize>(gpu: &Gpu, args: &Self::Args<'a, D>) -> TaskPartition;
 }
 
-pub trait KernelSignature {
-    type Args<'a, const D: usize>: KernelArgs<'a, D>;
-
-    fn binding_template() -> Vec<BindingTemplate<'static>>;
-
-    fn info_binding() -> BindingId;
-}
-
-pub trait Kernel<S: KernelSignature>: 'static {
+pub trait Kernel: 'static {
     const LABEL: &'static str;
-    //const BODY: &'static str;
     type Template: Template;
+    type Signature: KernelSignature;
 
-    fn template(info: KernelTemplateInfo<'static>) -> Self::Template;
+    fn template(info: KernelTemplateInfo) -> Self::Template;
 
     fn source(work_group_size: Vec3) -> String {
         let info = KernelTemplateInfo {
             label: Self::LABEL,
-            bindings: S::binding_template(),
-            info_binding_id: S::info_binding(),
+            declaration: Self::Signature::DECLARATION,
             work_group_size,
         };
 
@@ -109,11 +86,10 @@ pub trait Kernel<S: KernelSignature>: 'static {
 }
 
 #[derive(Debug)]
-pub struct KernelTemplateInfo<'a> {
-    pub label: &'a str,
-    pub bindings: Vec<BindingTemplate<'a>>,
-    pub info_binding_id: BindingId,
+pub struct KernelTemplateInfo {
+    pub label: &'static str,
     pub work_group_size: Vec3,
+    pub declaration: KernelDeclaration,
 }
 
 #[derive(Debug)]
@@ -137,14 +113,6 @@ impl<'a> BindingTemplate<'a> {
             data_type: T::WGSL_TYPE,
         }
     }
-
-    pub fn read_only<T: Element>(binding_id: BindingId, name: &'a str) -> Self {
-        Self::new::<T>(binding_id, BindingReadWrite::ReadOnly, name)
-    }
-
-    pub fn read_write<T: Element>(binding_id: BindingId, name: &'a str) -> Self {
-        Self::new::<T>(binding_id, BindingReadWrite::ReadWrite, name)
-    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -160,90 +128,6 @@ impl Display for BindingReadWrite {
             BindingReadWrite::ReadWrite => "read_write",
         };
         write!(f, "{s}")
-    }
-}
-
-pub struct BindGroupBuilder<'tensor, 'gpu, const D: usize> {
-    gpu: &'gpu Gpu,
-    info_data: Vec<i32>,
-    bind_group_entries: Vec<BindGroupEntry<'tensor>>,
-    info_binding_id: Option<BindingId>,
-}
-
-impl<'tensor, 'gpu, const D: usize> BindGroupBuilder<'tensor, 'gpu, D> {
-    pub fn new(gpu: &'gpu Gpu, chunk_size: u32, operation_shape: [usize; D]) -> Self {
-        // dimensions, chunk_size
-        let mut info_data = vec![D as i32, chunk_size as i32];
-
-        // op shape size
-        info_data.push(0);
-        // op shape
-        info_data.extend(operation_shape.map(|x| x as i32));
-        // op shape strides
-        info_data.extend(contiguous_strides(&operation_shape).map(|x| x as i32));
-
-        Self {
-            gpu,
-            info_data,
-            bind_group_entries: vec![],
-            info_binding_id: None,
-        }
-    }
-
-    pub fn add_tensor_binding<T: Element>(
-        &mut self,
-        binding_id: BindingId,
-        tensor: &'tensor Tensor<D, T>,
-    ) -> Result<&mut Self, GpuMismatch> {
-        self.gpu.check_same(&tensor.gpu)?;
-
-        self.info_data.push(tensor.strider.offset() as _);
-        self.info_data
-            .extend(tensor.strider.shape().map(|x| x as i32));
-        self.info_data
-            .extend(tensor.strider.strides().map(|x| x as i32));
-
-        self.bind_group_entries.push(BindGroupEntry {
-            binding: binding_id,
-            resource: tensor.buffer.as_binding(),
-        });
-
-        Ok(self)
-    }
-
-    pub fn add_reducer(&mut self, strider: &Strider<D>) -> &mut Self {
-        self.info_data.push(strider.shape_size() as i32);
-        self.info_data.extend(strider.shape().map(|x| x as i32));
-        self.info_data.extend(strider.strides().map(|x| x as i32));
-        self
-    }
-
-    pub fn add_info_binding(&mut self, binding_id: BindingId) -> &mut Self {
-        self.info_binding_id = Some(binding_id);
-        self
-    }
-
-    pub fn build(self, bind_group_layout: &BindGroupLayout) -> BindGroup {
-        let info_buffer = self.gpu.device().create_buffer_init(&BufferInitDescriptor {
-            label: Some("info buffer"),
-            contents: bytemuck::cast_slice(&self.info_data),
-            usage: BufferUsages::STORAGE,
-        });
-
-        let mut bind_group_entries = self.bind_group_entries;
-
-        bind_group_entries.push(BindGroupEntry {
-            binding: self.info_binding_id.expect("no info binding"),
-            resource: info_buffer.as_entire_binding(),
-        });
-
-        let bind_group = self.gpu.device().create_bind_group(&BindGroupDescriptor {
-            label: None,
-            layout: bind_group_layout,
-            entries: &bind_group_entries,
-        });
-
-        bind_group
     }
 }
 

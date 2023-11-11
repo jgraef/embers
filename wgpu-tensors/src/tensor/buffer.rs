@@ -78,21 +78,7 @@ impl TensorBuffer {
         label: &str,
     ) -> (Self, MappedTensorBuffer) {
         let unpadded_size: BufferAddress = size.try_into().unwrap();
-        // Valid vulkan usage is
-        // 1. buffer size must be a multiple of COPY_BUFFER_ALIGNMENT.
-        // 2. buffer size must be greater than 0.
-        // Therefore we round the value up to the nearest multiple, and ensure it's at
-        // least COPY_BUFFER_ALIGNMENT.
-        let align_mask = wgpu::COPY_BUFFER_ALIGNMENT - 1;
-        let padded_size =
-            ((unpadded_size + align_mask) & !align_mask).max(wgpu::COPY_BUFFER_ALIGNMENT);
-
-        let buffer = gpu.device().create_buffer(&BufferDescriptor {
-            label: Some(label),
-            size: padded_size,
-            usage: usage.into(),
-            mapped_at_creation: true,
-        });
+        let buffer = create_mapped_buffer(gpu, unpadded_size, label, usage.into());
 
         let tensor_buffer = Self {
             inner: Arc::new(TensorBufferInner {
@@ -313,4 +299,28 @@ impl From<TensorBufferUsage> for BufferUsages {
             TensorBufferUsage::CopyToHost => BufferUsages::MAP_READ | BufferUsages::COPY_DST,
         }
     }
+}
+
+pub(crate) fn create_mapped_buffer(
+    gpu: &Gpu,
+    unpadded_size: BufferAddress,
+    label: &str,
+    usage: BufferUsages,
+) -> AsyncBuffer {
+    // Valid vulkan usage is
+    // 1. buffer size must be a multiple of COPY_BUFFER_ALIGNMENT.
+    // 2. buffer size must be greater than 0.
+    // Therefore we round the value up to the nearest multiple, and ensure it's at
+    // least COPY_BUFFER_ALIGNMENT.
+    let align_mask = wgpu::COPY_BUFFER_ALIGNMENT - 1;
+    let padded_size = ((unpadded_size + align_mask) & !align_mask).max(wgpu::COPY_BUFFER_ALIGNMENT);
+
+    let buffer = gpu.device().create_buffer(&BufferDescriptor {
+        label: Some(label),
+        size: padded_size,
+        usage,
+        mapped_at_creation: true,
+    });
+
+    buffer
 }

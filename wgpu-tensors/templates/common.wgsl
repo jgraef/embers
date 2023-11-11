@@ -1,12 +1,16 @@
-{% for binding in info.bindings %}
+// parameter binding
 @group(0)
-@binding({{ binding.binding_id }})
-var<storage, {{ binding.rw }}> {{ binding.name }}: array<{{ binding.data_type }}>;
+@binding(0)
+var<storage, read> parameters: array<i32>;
+
+// tensor bindings
+{% for binding in info.declaration.bindings %}
+    @group(0)
+    @binding({{ loop.index }})
+    var<storage, {{ binding.read_write }}> {{ binding.name }}: array<{{ binding.ty }}>;
 {% endfor %}
 
-@group(0)
-@binding({{ info.info_binding_id }})
-var<storage, read> info_data: array<i32>;
+// constants
 
 const WORKGROUP_SIZE_X = {{ info.work_group_size.x }}u;
 const WORKGROUP_SIZE_Y = {{ info.work_group_size.y }}u;
@@ -14,61 +18,59 @@ const WORKGROUP_SIZE_Z = {{ info.work_group_size.z }}u;
 const WORKGROUP_SIZE = {{ info.work_group_size.product() }}u;
 
 // num bindings excluding the info_data binding
-const NUM_BINDINGS = {{ info.bindings.len() }}u;
-const NUM_INFO_CONSTANTS = 2u;
+const NUM_BINDINGS = {{ info.declaration.bindings.len() }}u;
+
+
+// parameters
 
 fn dim() -> u32 {
-    return u32(info_data[0u]);
+    return u32(parameters[0u]);
 }
 
-fn chunk_size() -> u32 {
-    return u32(info_data[1u]);
+fn p_count() -> u32 {
+    return u32(parameters[1u]);
 }
 
-fn info_offset(index: u32) -> i32 {
-    return info_data[2u * index * dim() + index + NUM_INFO_CONSTANTS];
+fn p_int(i: u32) -> i32 {
+    return parameters[i + 2u];
 }
 
-fn info_shape(index: u32, axis: u32) -> i32 {
-    return info_data[2u * index * dim() + index + axis + NUM_INFO_CONSTANTS + 1u];
+fn p_shaped(i: u32, axis: u32) -> i32 {
+    let p = u32(p_int(i)) + p_count() + 2u;
+    return parameters[u32(p) + axis];
 }
 
-fn info_stride(index: u32, axis: u32) -> i32 {
-    return info_data[2u * index * dim() + index + dim() + axis + NUM_INFO_CONSTANTS + 1u];
+{% for parameter in info.declaration.parameters %}
+    const P_{{ parameter.name|upper }}: u32 = {{ loop.index - 1}}u;
+
+    {% match parameter.ty %}
+        {% when KernelParameterType::Int %}
+            fn p_{{ parameter.name }}() -> i32 {
+                return p_int({{ loop.index - 1 }}u);
+            }
+        {% when KernelParameterType::Shaped %}
+            fn p_{{ parameter.name }}(axis: u32) -> i32 {
+                return p_shaped({{ loop.index - 1 }}u, axis);
+            }
+        {% when KernelParameterType::Strider %}
+    {% endmatch %}
+{% endfor %}
+
+
+// helper functions
+
+fn project(input: i32, p_stride_in: u32, p_shape: u32, p_stride_out: u32) -> i32 {
+    var output = 0;
+    for (var axis = 0u; axis < dim(); axis++) {
+        output += (input / p_shaped(p_stride_in, axis)) % p_shaped(p_shape, axis) * p_shaped(p_stride_out, axis);
+    }
+    return output;
 }
 
-fn op_size() -> i32 {
-    return info_offset(0u);
-}
-
-fn op_shape(axis: u32) -> i32 {
-    return info_shape(0u, axis);
-}
-
-fn op_stride(axis: u32) -> i32 {
-    return info_stride(0u, axis);
-}
-
-fn binding_offset(index: u32) -> i32 {
-    return info_offset(index + 1u);
-}
-
-fn binding_shape(index: u32, axis: u32) -> i32 {
-    return info_shape(index + 1u, axis);
-}
-
-fn binding_stride(index: u32, axis: u32) -> i32 {
-    return info_stride(index + 1u, axis);
-}
-
-fn reducer_size(index: u32) -> i32 {
-    return info_offset(NUM_BINDINGS + index)
-}
-
-fn reducer_shape(index: u32, axis: u32) -> i32 {
-    return info_shape(NUM_BINDINGS + index, axis);
-}
-
-fn reducer_stride(index: u32, axis: u32) -> i32 {
-    return info_stride(NUM_BINDINGS + index, axis);
+fn shape_size(p_shape: u32) -> i32 {
+    var size = 1;
+    for (var axis = 0u; axis < dim(); axis++) {
+        size *= p_shaped(p_shape, axis);
+    }
+    return size;
 }

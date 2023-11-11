@@ -17,16 +17,12 @@ use wgpu::{
 use super::{
     Kernel,
     KernelSignature,
-    TaskPartition,
     Vec3,
 };
 use crate::{
     error::KernelError,
     gpu::Gpu,
-    kernel::{
-        BindGroupBuilder,
-        KernelArgs,
-    },
+    kernel::binding::KernelBindingBuilder,
 };
 
 #[derive(Debug)]
@@ -41,15 +37,13 @@ impl KernelExecutor {
         }
     }
 
-    pub async fn run_kernel<'a, const D: usize, K: Kernel<S>, S: KernelSignature>(
+    pub async fn run_kernel<'a, const D: usize, K: Kernel>(
         &self,
         gpu: &Gpu,
-        args: &'a <S as KernelSignature>::Args<'a, D>,
+        args: <<K as Kernel>::Signature as KernelSignature>::Args<'a, D>,
     ) -> Result<(), KernelError> {
         let kernel_id = TypeId::of::<K>();
-        let operation_shape = args.shape();
-        let task_partition = TaskPartition::from_shape(gpu, &operation_shape);
-        //let task_partition = K::task_partition(gpu, args);
+        let task_partition = <K as Kernel>::Signature::task_partition(gpu, &args);
         assert_eq!(task_partition.chunk_size, 1, "todo");
 
         // fetch from cache or create compute pipeline
@@ -69,11 +63,10 @@ impl KernelExecutor {
         };
 
         // create bind group
-        let mut bind_group_builder =
-            BindGroupBuilder::new(gpu, task_partition.chunk_size, operation_shape);
-        args.create_bind_group(&mut bind_group_builder)?;
+        let mut kernel_binding_builder = KernelBindingBuilder::new(gpu, K::Signature::DECLARATION);
+        <K::Signature as KernelSignature>::build_bind_group(args, &mut kernel_binding_builder)?;
         let bind_group_layout = compute_pipeline.get_bind_group_layout(0);
-        let bind_group = bind_group_builder.build(&bind_group_layout);
+        let bind_group = kernel_binding_builder.build(&bind_group_layout);
 
         let mut encoder = gpu
             .device()

@@ -3,17 +3,17 @@ use std::marker::PhantomData;
 use askama::Template;
 
 use super::{
-    unary::{
-        UnaryArgs,
-        UnarySignature,
+    binding::{
+        KernelBindingBuilder,
+        KernelBindingDeclaration,
+        KernelDeclaration,
+        KernelParameterDeclaration,
+        KernelParameterType,
     },
-    BindGroupBuilder,
-    BindingId,
-    BindingTemplate,
     Kernel,
-    KernelArgs,
     KernelSignature,
     KernelTemplateInfo,
+    TaskPartition,
 };
 use crate::{
     element::{
@@ -23,99 +23,121 @@ use crate::{
         WgslValue,
     },
     error::KernelError,
-    tensor::strider::Strider,
+    tensor::strider::{
+        ReduceResult,
+        Strider,
+    },
     Tensor,
 };
 
-pub struct Reduce<T> {
-    _t: PhantomData<T>,
+pub struct FoldKernel<T, R, A> {
+    _t: PhantomData<(T, R, A)>,
 }
 
-pub trait ReducerSignature: KernelSignature {
-    const INPUT_NAME: &'static str;
-    const INPUT_INDEX: usize;
-}
-
-pub trait ReduceKernel<S: ReducerSignature>: 'static {
+pub trait Fold<R: Element, A: Element>: 'static {
     const LABEL: &'static str;
 
     const STATE_TYPE: WgslType;
 
     fn state_init() -> WgslValue;
 
-    const FUNC: &'static str;
+    const APPLY: &'static str;
 }
 
-impl<K: ReduceKernel<S>, S: ReducerSignature> Kernel<S> for Reduce<K> {
-    const LABEL: &'static str = <K as ReduceKernel<S>>::LABEL;
-    type Template = ReduceKernelTemplate<'static>;
+impl<F: Fold<R, A>, R: Element, A: Element> Kernel for FoldKernel<F, R, A> {
+    const LABEL: &'static str = <F as Fold<R, A>>::LABEL;
+    type Template = FoldKernelTemplate;
+    type Signature = FoldSignature<R, A>;
 
-    fn template(info: KernelTemplateInfo<'static>) -> Self::Template {
-        ReduceKernelTemplate {
+    fn template(info: KernelTemplateInfo) -> Self::Template {
+        FoldKernelTemplate {
             info,
-            input_name: S::INPUT_NAME,
-            input_index: S::INPUT_INDEX,
-            state_type: K::STATE_TYPE,
-            state_init: K::state_init(),
-            func: K::FUNC,
+            state: StateTemplate {
+                init: F::state_init(),
+                ty: F::STATE_TYPE,
+            },
+            apply: F::APPLY,
         }
     }
 }
 
 #[derive(Debug, Template)]
-#[template(path = "reduce.wgsl")]
-pub struct ReduceKernelTemplate<'a> {
-    info: KernelTemplateInfo<'a>,
-    input_name: &'a str,
-    input_index: usize,
-    state_type: WgslType,
-    state_init: WgslValue,
-    func: &'a str,
+#[template(path = "fold.wgsl")]
+pub struct FoldKernelTemplate {
+    info: KernelTemplateInfo,
+    state: StateTemplate,
+    apply: &'static str,
 }
 
-pub struct FoldArgs<'a, const D: usize, R: Element, A: Element> {
-    tensors: UnaryArgs<'a, D, R, A>,
-    reducer: &'a Strider<D>,
-}
-
-impl<'a, const D: usize, R: Element, A: Element> KernelArgs<'a, D> for FoldArgs<'a, D, R, A> {
-    fn create_bind_group(
-        &'a self,
-        bind_group_builder: &mut BindGroupBuilder<'a, '_, D>,
-    ) -> Result<(), KernelError> {
-        self.tensors.create_bind_group(bind_group_builder)?;
-        bind_group_builder.add_reducer(&self.reducer);
-        Ok(())
-    }
-
-    fn shape(&self) -> [usize; D] {
-        // todo: make sure we actually reduce to this shape.
-        self.tensors.result.shape()
-    }
+#[derive(Debug)]
+pub struct StateTemplate {
+    init: WgslValue,
+    ty: WgslType,
 }
 
 pub struct FoldSignature<R: Element, A: Element>(PhantomData<(R, A)>);
 
-impl<R: Element, A: Element> ReducerSignature for FoldSignature<R, A> {
-    const INPUT_NAME: &'static str = "operand";
-    const INPUT_INDEX: usize = 1;
+#[derive(Debug)]
+pub struct FoldArgs<'a, const D: usize, R: Element, A: Element> {
+    result: &'a Tensor<D, R>,
+    input: &'a Tensor<D, A>,
+    reducer: &'a Strider<D>,
+    reduced: &'a Strider<D>,
 }
 
 impl<R: Element, A: Element> KernelSignature for FoldSignature<R, A> {
+    const DECLARATION: KernelDeclaration = KernelDeclaration {
+        bindings: &[
+            KernelBindingDeclaration::read_write::<R>("result"),
+            KernelBindingDeclaration::read_only::<A>("input"),
+        ],
+        parameters: &[
+            KernelParameterDeclaration::shaped("reduced_strides"),
+            KernelParameterDeclaration::shaped("reduced_shape"),
+            KernelParameterDeclaration::shaped("reducer_strides"),
+            KernelParameterDeclaration::shaped("reducer_shape"),
+            KernelParameterDeclaration::int("result_offset"),
+            KernelParameterDeclaration::shaped("result_strides"),
+            KernelParameterDeclaration::int("input_offset"),
+            KernelParameterDeclaration::shaped("input_strides"),
+        ],
+    };
+
     type Args<'a, const D: usize> = FoldArgs<'a, D, R, A>;
 
-    fn binding_template() -> Vec<BindingTemplate<'static>> {
-        UnarySignature::<R, A>::binding_template()
+    fn build_bind_group<'gpu, 'tensor, const D: usize>(
+        args: Self::Args<'tensor, D>,
+        builder: &mut KernelBindingBuilder<'gpu, 'tensor, D>,
+    ) -> Result<(), KernelError> {
+        builder.add_binding("result", args.result)?;
+        builder.add_binding("input", args.input)?;
+
+        builder.add_parameter("reduced_strides", args.reduced.strides())?;
+        builder.add_parameter("reduced_shape", args.reduced.shape())?;
+
+        builder.add_parameter("reducer_strides", args.reducer.strides())?;
+        builder.add_parameter("reducer_shape", args.reducer.shape())?;
+
+        builder.add_parameter("result_offset", args.result.strider.offset())?;
+        builder.add_parameter("result_strides", args.result.strider.strides())?;
+
+        builder.add_parameter("input_offset", args.input.strider.offset())?;
+        builder.add_parameter("input_strides", args.input.strider.strides())?;
+
+        Ok(())
     }
 
-    fn info_binding() -> BindingId {
-        UnarySignature::<R, A>::info_binding()
+    fn task_partition<'a, const D: usize>(
+        gpu: &crate::Gpu,
+        args: &Self::Args<'a, D>,
+    ) -> TaskPartition {
+        TaskPartition::from_shape(gpu, args.reduced.shape())
     }
 }
 
 pub struct Sum;
 
-impl<T: Element + Number> ReduceKernel<FoldSignature<T, T>> for Sum {
+impl<T: Element> Fold<T, T> for Sum {
     const LABEL: &'static str = "Sum";
 
     const STATE_TYPE: WgslType = T::WGSL_TYPE;
@@ -124,21 +146,27 @@ impl<T: Element + Number> ReduceKernel<FoldSignature<T, T>> for Sum {
         T::ZERO.into()
     }
 
-    const FUNC: &'static str = "reduce_state += operand[reducer_offset];";
+    const APPLY: &'static str = "reducer_state += x;";
 }
 
 impl<const D: usize, T: Element + Number> Tensor<D, T> {
-    pub async fn sum(&self, axis: usize) -> Result<Tensor<D, T>, KernelError> {
-        let (reducer, reduced) = self.strider.reduce(axis);
-        let mut result = Tensor::allocate(&self.gpu, reduced.shape());
+    pub async fn sum(&self, axis: &[usize]) -> Result<Tensor<D, T>, KernelError> {
+        let ReduceResult { reducer, reduced } = self.strider.reduce(axis)?;
+
+        let result = Tensor::allocate(&self.gpu, reduced.shape());
+
         let args = FoldArgs {
-            tensors: UnaryArgs {
-                result: &mut result,
-                operand: self,
-            },
+            result: &result,
+            input: self,
             reducer: &reducer,
+            reduced: &reduced,
         };
-        self.gpu.run_kernel::<D, Reduce<Sum>, _>(&args).await?;
+
+        tracing::debug!("args: {:#?}", args);
+
+        self.gpu
+            .run_kernel::<D, FoldKernel<Sum, T, T>>(args)
+            .await?;
 
         // todo: later this will reduce the rank of the result tensor.
         Ok(result.with_strider(reduced))

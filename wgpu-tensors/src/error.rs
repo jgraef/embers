@@ -1,4 +1,10 @@
-use crate::gpu::Gpu;
+use crate::{
+    gpu::Gpu,
+    kernel::binding::{
+        KernelBindingError,
+        KernelParameterError,
+    },
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -48,6 +54,15 @@ pub enum KernelError {
 
     #[error("gpu mismatch")]
     GpuMismatch(#[from] GpuMismatch),
+
+    #[error("kernel parameter error")]
+    KernelParameter(#[from] KernelParameterError),
+
+    #[error("kernel binding error")]
+    KernelBinding(#[from] KernelBindingError),
+
+    #[error("invalid axis")]
+    InvalidAxis(#[from] InvalidAxis),
 }
 
 #[derive(Debug, thiserror::Error)]
