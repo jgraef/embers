@@ -1,6 +1,10 @@
 use std::marker::PhantomData;
 
 use super::{
+    map::{
+        Map,
+        MapKernel,
+    },
     BindGroupBuilder,
     BindingTemplate,
     Kernel,
@@ -71,26 +75,26 @@ impl<const D: usize, T: Element> Tensor<D, T> {
 }
 
 pub struct Identity;
-impl<T: Element> Kernel<UnarySignature<T, T>> for Identity {
+impl<T: Element> MapKernel<UnarySignature<T, T>> for Identity {
     const LABEL: &'static str = "Identity";
     const BODY: &'static str = "result[index_result] = operand[index_operand];";
 }
 
 impl<const D: usize, T: Element> Tensor<D, T> {
     pub async fn id(&self) -> Result<Tensor<D, T>, KernelError> {
-        self.unary_elementwise::<Identity, _>().await
+        self.unary_elementwise::<Map<Identity>, _>().await
     }
 }
 
 pub struct ElementwiseNegate;
-impl<T: Element + Number> Kernel<UnarySignature<T, T>> for ElementwiseNegate {
+impl<T: Element + Number> MapKernel<UnarySignature<T, T>> for ElementwiseNegate {
     const LABEL: &'static str = "ElementwiseNegate";
     const BODY: &'static str = "result[index_result] = -operand[index_operand];";
 }
 
 impl<const D: usize, T: Element + Number> Tensor<D, T> {
     pub async fn neg(&self) -> Result<Tensor<D, T>, KernelError> {
-        self.unary_elementwise::<ElementwiseNegate, _>().await
+        self.unary_elementwise::<Map<ElementwiseNegate>, _>().await
     }
 }
 
@@ -98,7 +102,7 @@ macro_rules! unary_func_kernel {
     ($kernel:ident, $wsgl_func:ident) => {
         pub struct $kernel;
 
-        impl<T: Element + Number> Kernel<UnarySignature<T, T>> for $kernel {
+        impl<T: Element + Number> MapKernel<UnarySignature<T, T>> for $kernel {
             const LABEL: &'static str = stringify!($kernel);
             const BODY: &'static str = concat!(
                 "result[index_result] = ",
@@ -113,7 +117,7 @@ macro_rules! unary_tensor_impl {
     ($kernel:ident, $tensor_func:ident) => {
         impl<const D: usize, T: Element + Number> Tensor<D, T> {
             pub async fn $tensor_func(&self) -> Result<Tensor<D, T>, KernelError> {
-                self.unary_elementwise::<$kernel, _>().await
+                self.unary_elementwise::<Map<$kernel>, _>().await
             }
         }
     };

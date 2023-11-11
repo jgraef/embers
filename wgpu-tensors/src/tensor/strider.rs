@@ -261,6 +261,10 @@ impl<const D: usize> Strider<D> {
             is_contiguous: self.is_contiguous,
         })
     }
+
+    pub fn reduce(&self, _axis: usize) -> (Strider<D>, Strider<D>) {
+        todo!();
+    }
 }
 
 impl Strider<0> {

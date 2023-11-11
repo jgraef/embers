@@ -1,5 +1,7 @@
 pub mod binary;
 pub mod executor;
+pub mod map;
+pub mod reduce;
 pub mod trinary;
 pub mod unary;
 
@@ -26,7 +28,10 @@ use wgpu::{
 };
 
 use crate::{
-    element::Element,
+    element::{
+        Element,
+        WgslType,
+    },
     error::{
         GpuMismatch,
         KernelError,
@@ -34,7 +39,10 @@ use crate::{
     gpu::Gpu,
     tensor::{
         shape::Shape,
-        strider::contiguous_strides,
+        strider::{
+            contiguous_strides,
+            Strider,
+        },
         Tensor,
     },
 };
@@ -58,18 +66,22 @@ pub trait KernelSignature {
 
 pub trait Kernel<S: KernelSignature>: 'static {
     const LABEL: &'static str;
-    const BODY: &'static str;
+    //const BODY: &'static str;
+    type Template: Template;
+
+    fn template(info: KernelTemplateInfo<'static>) -> Self::Template;
 
     fn source(work_group_size: Vec3) -> String {
-        KernelTemplate {
+        let info = KernelTemplateInfo {
             label: Self::LABEL,
             bindings: S::binding_template(),
             info_binding_id: S::info_binding(),
             work_group_size,
-            body: Self::BODY,
-        }
-        .render()
-        .expect("kernel render failed")
+        };
+
+        let template = Self::template(info);
+
+        template.render().expect("kernel render failed")
     }
 
     fn create_compute_pipeline(gpu: &Gpu, work_group_size: Vec3) -> ComputePipeline {
@@ -96,14 +108,12 @@ pub trait Kernel<S: KernelSignature>: 'static {
     }
 }
 
-#[derive(Debug, Template)]
-#[template(path = "kernel.wgsl")]
-pub struct KernelTemplate<'a> {
+#[derive(Debug)]
+pub struct KernelTemplateInfo<'a> {
     pub label: &'a str,
     pub bindings: Vec<BindingTemplate<'a>>,
     pub info_binding_id: BindingId,
     pub work_group_size: Vec3,
-    pub body: &'a str,
 }
 
 #[derive(Debug)]
@@ -111,7 +121,7 @@ pub struct BindingTemplate<'a> {
     pub binding_id: BindingId,
     pub rw: BindingReadWrite,
     pub name: Cow<'a, str>,
-    pub data_type: &'a str,
+    pub data_type: WgslType,
 }
 
 impl<'a> BindingTemplate<'a> {
@@ -155,21 +165,26 @@ impl Display for BindingReadWrite {
 
 pub struct BindGroupBuilder<'tensor, 'gpu, const D: usize> {
     gpu: &'gpu Gpu,
-    shape_data: Vec<i32>,
+    info_data: Vec<i32>,
     bind_group_entries: Vec<BindGroupEntry<'tensor>>,
     info_binding_id: Option<BindingId>,
 }
 
 impl<'tensor, 'gpu, const D: usize> BindGroupBuilder<'tensor, 'gpu, D> {
     pub fn new(gpu: &'gpu Gpu, chunk_size: u32, operation_shape: [usize; D]) -> Self {
-        let mut shape_data = vec![D as i32, chunk_size as i32];
-        shape_data.push(0); // offset, unused
-        shape_data.extend(operation_shape.map(|x| x as i32));
-        shape_data.extend(contiguous_strides(&operation_shape).map(|x| x as i32));
+        // dimensions, chunk_size
+        let mut info_data = vec![D as i32, chunk_size as i32];
+
+        // op shape size
+        info_data.push(0);
+        // op shape
+        info_data.extend(operation_shape.map(|x| x as i32));
+        // op shape strides
+        info_data.extend(contiguous_strides(&operation_shape).map(|x| x as i32));
 
         Self {
             gpu,
-            shape_data,
+            info_data,
             bind_group_entries: vec![],
             info_binding_id: None,
         }
@@ -182,10 +197,10 @@ impl<'tensor, 'gpu, const D: usize> BindGroupBuilder<'tensor, 'gpu, D> {
     ) -> Result<&mut Self, GpuMismatch> {
         self.gpu.check_same(&tensor.gpu)?;
 
-        self.shape_data.push(tensor.strider.offset() as _);
-        self.shape_data
+        self.info_data.push(tensor.strider.offset() as _);
+        self.info_data
             .extend(tensor.strider.shape().map(|x| x as i32));
-        self.shape_data
+        self.info_data
             .extend(tensor.strider.strides().map(|x| x as i32));
 
         self.bind_group_entries.push(BindGroupEntry {
@@ -196,6 +211,13 @@ impl<'tensor, 'gpu, const D: usize> BindGroupBuilder<'tensor, 'gpu, D> {
         Ok(self)
     }
 
+    pub fn add_reducer(&mut self, strider: &Strider<D>) -> &mut Self {
+        self.info_data.push(strider.shape_size() as i32);
+        self.info_data.extend(strider.shape().map(|x| x as i32));
+        self.info_data.extend(strider.strides().map(|x| x as i32));
+        self
+    }
+
     pub fn add_info_binding(&mut self, binding_id: BindingId) -> &mut Self {
         self.info_binding_id = Some(binding_id);
         self
@@ -204,8 +226,8 @@ impl<'tensor, 'gpu, const D: usize> BindGroupBuilder<'tensor, 'gpu, D> {
     pub fn build(self, bind_group_layout: &BindGroupLayout) -> BindGroup {
         let info_buffer = self.gpu.device().create_buffer_init(&BufferInitDescriptor {
             label: Some("info buffer"),
-            contents: bytemuck::cast_slice(&self.shape_data),
-            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC,
+            contents: bytemuck::cast_slice(&self.info_data),
+            usage: BufferUsages::STORAGE,
         });
 
         let mut bind_group_entries = self.bind_group_entries;
@@ -232,6 +254,12 @@ pub struct Vec3 {
     pub x: u32,
     pub y: u32,
     pub z: u32,
+}
+
+impl Vec3 {
+    pub fn product(&self) -> u32 {
+        self.x * self.y * self.z
+    }
 }
 
 #[derive(Copy, Clone, Debug)]

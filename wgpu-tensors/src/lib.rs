@@ -8,4 +8,7 @@ pub mod kernel;
 pub mod tensor;
 mod utils;
 
-pub use crate::{tensor::Tensor, gpu::Gpu};
+pub use crate::{
+    gpu::Gpu,
+    tensor::Tensor,
+};

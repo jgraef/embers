@@ -1,6 +1,10 @@
 use std::marker::PhantomData;
 
 use super::{
+    map::{
+        Map,
+        MapKernel,
+    },
     BindGroupBuilder,
     BindingTemplate,
     Kernel,
@@ -107,7 +111,7 @@ macro_rules! trinary_func_kernel {
     ($kernel:ident, $wsgl_func:ident) => {
         pub struct $kernel;
 
-        impl<T: Element + Number> Kernel<TrinarySignature<T, T, T, T>> for $kernel {
+        impl<T: Element + Number> MapKernel<TrinarySignature<T, T, T, T>> for $kernel {
             const LABEL: &'static str = stringify!($kernel);
             const BODY: &'static str = concat!(
                 "result[index_result] = ",
@@ -126,7 +130,7 @@ macro_rules! trinary_tensor_impl {
                 $arg1_name: &Tensor<D, T>,
                 $arg2_name: &Tensor<D, T>,
             ) -> Result<Tensor<D, T>, KernelError> {
-                self.trinary_op::<$kernel, _, _, _>($arg1_name, $arg2_name)
+                self.trinary_op::<Map<$kernel>, _, _, _>($arg1_name, $arg2_name)
                     .await
             }
         }

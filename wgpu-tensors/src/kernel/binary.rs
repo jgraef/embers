@@ -3,6 +3,10 @@ use std::marker::PhantomData;
 use concat_idents::concat_idents;
 
 use super::{
+    map::{
+        Map,
+        MapKernel,
+    },
     BindGroupBuilder,
     BindingTemplate,
     Kernel,
@@ -122,7 +126,7 @@ macro_rules! binary_func_kernel {
     ($kernel:ident, $wsgl_func:ident) => {
         pub struct $kernel;
 
-        impl<T: Element + Number> Kernel<BinarySignature<T, T, T>> for $kernel {
+        impl<T: Element + Number> MapKernel<BinarySignature<T, T, T>> for $kernel {
             const LABEL: &'static str = stringify!($kernel);
             const BODY: &'static str = concat!(
                 "result[index_result] = ",
@@ -137,7 +141,7 @@ macro_rules! binary_infix_kernel {
     ($kernel:ident, $op:tt) => {
         pub struct $kernel;
 
-        impl<T: Element + Number> Kernel<BinarySignature<T, T, T>> for $kernel {
+        impl<T: Element + Number> MapKernel<BinarySignature<T, T, T>> for $kernel {
             const LABEL: &'static str = stringify!($kernel);
             const BODY: &'static str = concat!(
                 "result[index_result] = operand_a[index_operand_a] ",
@@ -156,7 +160,7 @@ macro_rules! binary_tensor_impl {
                 other: &Tensor<D, T>,
             ) -> Result<Tensor<D, T>, KernelError>
             {
-                self.binary_elementwise::<$kernel, _, _>(other)
+                self.binary_elementwise::<Map<$kernel>, _, _>(other)
                     .await
             }
 
@@ -168,7 +172,7 @@ macro_rules! binary_tensor_impl {
                 where
                     [(); max_rank(D, E)]:, // ???
                 {
-                    self.binary_elementwise_broadcast::<E, $kernel, _, _>(other)
+                    self.binary_elementwise_broadcast::<E, Map<$kernel>, _, _>(other)
                         .await
                 }
             });
@@ -202,5 +206,5 @@ binary_infix!(ElementwiseModulo, %, modulo);
 
 binary_func!(ElementwisePower, pow);
 binary_func!(ElementwiseStep, step);
-binary_func!(ElementwiseMax, max);
-binary_func!(ElementwiseMin, min);
+binary_func!(ElementwiseMax, max, max_elementwise);
+binary_func!(ElementwiseMin, min, min_elementwise);
