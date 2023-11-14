@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use super::{
     KernelSignature,
     Map,
-    MapKernel,
+    MapKernel, MapSignature,
 };
 use crate::{
     element::{
@@ -99,12 +99,14 @@ impl<R: Element, A: Element, B: Element, C: Element> KernelSignature
         Ok(())
     }
 
-    fn task_partition<'a, const D: usize>(
-        gpu: &crate::Gpu,
-        args: &Self::Args<'a, D>,
-    ) -> TaskPartition {
-        TaskPartition::from_shape(gpu, args.result.shape())
+    fn task_partition<'a, const D: usize>(args: &Self::Args<'a, D>) -> TaskPartition {
+        TaskPartition::for_result(&args.result)
     }
+}
+
+impl<R: Element, A: Element, B: Element, C: Element> MapSignature for TernarySignature<R, A, B, C> {
+    const INPUTS: &'static [&'static str] = &["operand_1", "operand_2", "operand_3"];
+    const OUTPUTS: &'static [&'static str] = &["result"];
 }
 
 impl<const D: usize, A: Element> Tensor<D, A> {
@@ -147,9 +149,9 @@ macro_rules! ternary_func_kernel {
         impl<T: Element + Number> Map for $kernel<T> {
             const LABEL: &'static str = stringify!($kernel);
             const BODY: &'static str = concat!(
-                "result[index_result] = ",
+                "let value_result = ",
                 stringify!($wsgl_func),
-                "(operand_1[index_operand_1], operand_2[index_operand_2], operand_3[index_operand_3]);"
+                "(value_operand_1, value_operand_2, value_operand_3);"
             );
             type Signature = TernarySignature<T, T, T, T>;
         }

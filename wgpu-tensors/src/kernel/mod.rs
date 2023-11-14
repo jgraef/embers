@@ -4,8 +4,6 @@ pub mod executor;
 pub mod fold;
 pub mod map;
 
-use std::fmt::Display;
-
 use askama::Template;
 use wgpu::{
     ComputePipeline,
@@ -19,9 +17,13 @@ use self::binding::{
     KernelDeclaration,
 };
 use crate::{
+    element::{
+        Element,
+        Encode,
+    },
     error::KernelError,
     gpu::Gpu,
-    tensor::shape::Shape,
+    Tensor,
 };
 
 pub trait KernelSignature {
@@ -33,7 +35,7 @@ pub trait KernelSignature {
         builder: &mut KernelBindingBuilder<'gpu, 'tensor, D>,
     ) -> Result<(), KernelError>;
 
-    fn task_partition<'a, const D: usize>(gpu: &Gpu, args: &Self::Args<'a, D>) -> TaskPartition;
+    fn task_partition<'a, const D: usize>(args: &Self::Args<'a, D>) -> TaskPartition;
 }
 
 pub trait Kernel: 'static {
@@ -86,22 +88,6 @@ pub struct KernelTemplateInfo {
     pub declaration: KernelDeclaration,
 }
 
-#[derive(Copy, Clone, Debug)]
-pub enum BindingReadWrite {
-    ReadOnly,
-    ReadWrite,
-}
-
-impl Display for BindingReadWrite {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = match self {
-            BindingReadWrite::ReadOnly => "read",
-            BindingReadWrite::ReadWrite => "read_write",
-        };
-        write!(f, "{s}")
-    }
-}
-
 type BindingId = u32;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -125,17 +111,18 @@ pub struct TaskPartition {
 }
 
 impl TaskPartition {
-    pub fn from_shape(gpu: &Gpu, shape: impl Shape) -> Self {
-        let limits = gpu.limits();
+    pub fn for_result<const D: usize, T: Element>(tensor: &Tensor<D, T>) -> Self {
+        let limits = tensor.gpu.limits();
 
-        let output_size = shape.size().try_into().unwrap();
-        let max_workgroup_size = limits.max_compute_workgroup_size_x;
-        //let max_workgroup_count = limits.max_compute_invocations_per_workgroup;
+        let output_size = <T as Encode>::encoded_size(tensor.size());
+        let chunk_size = <T as Encode>::NUM_PACKED;
 
-        if output_size <= max_workgroup_size {
+        let workgroup_size = output_size.div_ceil(chunk_size) as u32;
+
+        if workgroup_size <= limits.max_compute_workgroup_size_x {
             TaskPartition {
                 workgroup_size: Vec3 {
-                    x: output_size,
+                    x: workgroup_size,
                     y: 1,
                     z: 1,
                 },

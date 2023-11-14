@@ -4,6 +4,7 @@ use std::{
     mem::size_of,
 };
 
+use num::integer::lcm;
 use wgpu::{
     BindGroup,
     BindGroupDescriptor,
@@ -16,6 +17,7 @@ use super::BindingId;
 use crate::{
     element::{
         Element,
+        Encode,
         WgslType,
     },
     error::KernelError,
@@ -41,10 +43,10 @@ pub struct KernelBindingBuilder<'gpu, 'tensor, const D: usize> {
 }
 
 impl<'gpu, 'tensor, const D: usize> KernelBindingBuilder<'gpu, 'tensor, D> {
-    pub fn new(gpu: &'gpu Gpu, declarations: KernelDeclaration) -> Self {
+    pub fn new(gpu: &'gpu Gpu, declarations: KernelDeclaration, chunk_size: u32) -> Self {
         let mut header = Vec::with_capacity(declarations.parameters.len() + 1);
         header.push(D as i32);
-        header.push(0);
+        header.push(chunk_size as i32);
         let body = Vec::with_capacity(declarations.parameters.len() * D);
 
         let bind_group_entries = Vec::with_capacity(declarations.bindings.len() + 1);
@@ -179,14 +181,12 @@ impl<'gpu, 'tensor, const D: usize> KernelBindingBuilder<'gpu, 'tensor, D> {
 
     pub fn build(self, bind_group_layout: &BindGroupLayout) -> BindGroup {
         let mut bind_group_entries = self.bind_group_entries;
-        let mut header = self.header;
 
         // put num parameters into header
-        let n = header.len();
-        header[1] = (n - 2).try_into().unwrap();
+        let n = self.header.len();
 
         // create parameter buffer
-        let size = ((header.len() + self.body.len()) * size_of::<i32>())
+        let size = ((n + self.body.len()) * size_of::<i32>())
             .try_into()
             .unwrap();
         let buffer = create_mapped_buffer(&self.gpu, size, "parameters", BufferUsages::STORAGE);
@@ -194,7 +194,7 @@ impl<'gpu, 'tensor, const D: usize> KernelBindingBuilder<'gpu, 'tensor, D> {
             let slice = buffer.slice(..);
             let mut view = slice.get_mapped_range_mut();
             let view: &mut [i32] = bytemuck::cast_slice_mut(&mut view);
-            view[0..n].copy_from_slice(&header);
+            view[0..n].copy_from_slice(&self.header);
             view[n..n + self.body.len()].copy_from_slice(&self.body);
             tracing::debug!("kernel parameters: {:?}", &view[..]);
         }
@@ -221,6 +221,20 @@ impl<'gpu, 'tensor, const D: usize> KernelBindingBuilder<'gpu, 'tensor, D> {
 pub struct KernelDeclaration {
     pub bindings: &'static [KernelBindingDeclaration],
     pub parameters: &'static [KernelParameterDeclaration],
+}
+
+impl KernelDeclaration {
+    pub fn chunk_size(&self) -> u32 {
+        let mut chunk_size = 1;
+
+        for binding in self.bindings {
+            if binding.read_write == KernelBindingReadWrite::ReadWrite {
+                chunk_size = lcm(chunk_size, binding.encoding.num_packed);
+            }
+        }
+
+        chunk_size
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -315,27 +329,30 @@ pub struct KernelBindingDeclaration {
     pub name: &'static str,
     pub ty: &'static str,
     pub read_write: KernelBindingReadWrite,
+    pub encoding: KernelBindingEncoding,
 }
 
 impl KernelBindingDeclaration {
-    pub const fn read_only<T: Element>(name: &'static str) -> Self {
+    pub const fn read_only<T: Encode>(name: &'static str) -> Self {
         Self {
             name,
-            ty: T::Encoded::TYPE_NAME,
+            ty: <<T as Encode>::Primitive as WgslType>::TYPE_NAME,
             read_write: KernelBindingReadWrite::ReadOnly,
+            encoding: KernelBindingEncoding::new::<T>(),
         }
     }
 
-    pub const fn read_write<T: Element>(name: &'static str) -> Self {
+    pub const fn read_write<T: Encode>(name: &'static str) -> Self {
         Self {
             name,
-            ty: T::Encoded::TYPE_NAME,
+            ty: <<T as Encode>::Primitive as WgslType>::TYPE_NAME,
             read_write: KernelBindingReadWrite::ReadWrite,
+            encoding: KernelBindingEncoding::new::<T>(),
         }
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum KernelBindingReadWrite {
     ReadOnly,
     ReadWrite,
@@ -348,6 +365,25 @@ impl Display for KernelBindingReadWrite {
             Self::ReadWrite => "read_write",
         };
         write!(f, "{s}")
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct KernelBindingEncoding {
+    pub ty: &'static str,
+    pub num_packed: u32,
+    pub decode: &'static str,
+    pub encode: &'static str,
+}
+
+impl KernelBindingEncoding {
+    pub const fn new<T: Encode>() -> Self {
+        Self {
+            ty: <<T as Encode>::Encoded as WgslType>::TYPE_NAME,
+            num_packed: <T as Encode>::NUM_PACKED as u32,
+            decode: <T as Encode>::WGSL_DECODE,
+            encode: <T as Encode>::WGSL_ENCODE,
+        }
     }
 }
 

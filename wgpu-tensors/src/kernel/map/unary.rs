@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use super::MapKernel;
+use super::{MapKernel, MapSignature};
 use crate::{
     element::{
         Element,
@@ -72,12 +72,14 @@ impl<R: Element, A: Element> KernelSignature for UnarySignature<R, A> {
         Ok(())
     }
 
-    fn task_partition<'a, const D: usize>(
-        gpu: &crate::Gpu,
-        args: &Self::Args<'a, D>,
-    ) -> TaskPartition {
-        TaskPartition::from_shape(gpu, args.result.shape())
+    fn task_partition<'a, const D: usize>(args: &Self::Args<'a, D>) -> TaskPartition {
+        TaskPartition::for_result(&args.result)
     }
+}
+
+impl<R: Element, A: Element> MapSignature for UnarySignature<R, A> {
+    const INPUTS: &'static [&'static str] = &["operand"];
+    const OUTPUTS: &'static [&'static str] = &["result"];
 }
 
 impl<const D: usize, T: Element> Tensor<D, T> {
@@ -98,7 +100,7 @@ impl<const D: usize, T: Element> Tensor<D, T> {
 pub struct Identity<T>(PhantomData<T>);
 impl<T: Element> Map for Identity<T> {
     const LABEL: &'static str = "Identity";
-    const BODY: &'static str = "result[index_result] = operand[index_operand];";
+    const BODY: &'static str = "let value_result = value_operand;";
     type Signature = UnarySignature<T, T>;
 }
 
@@ -111,7 +113,7 @@ impl<const D: usize, T: Element> Tensor<D, T> {
 pub struct ElementwiseNegate<T>(PhantomData<T>);
 impl<T: Element + Number> Map for ElementwiseNegate<T> {
     const LABEL: &'static str = "ElementwiseNegate";
-    const BODY: &'static str = "result[index_result] = -operand[index_operand];";
+    const BODY: &'static str = "let value_result = -value_operand;";
     type Signature = UnarySignature<T, T>;
 }
 
@@ -129,9 +131,9 @@ macro_rules! unary_func_kernel {
         impl<T: Element + Number> Map for $kernel<T> {
             const LABEL: &'static str = stringify!($kernel);
             const BODY: &'static str = concat!(
-                "result[index_result] = ",
+                "let value_result = ",
                 stringify!($wsgl_func),
-                "(operand[index_operand]);"
+                "(value_operand);"
             );
             type Signature = UnarySignature<T, T>;
         }

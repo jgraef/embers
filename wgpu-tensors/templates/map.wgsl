@@ -8,21 +8,38 @@ fn main(
     @builtin(global_invocation_id) global_id: vec3<u32>,
     @builtin(num_workgroups) num_workgroups: vec3<u32>,
 ) {
-    let id = i32(global_id.y * (num_workgroups.x * WORKGROUP_SIZE_X) + global_id.x);
+    let index_range = index_range(global_id, num_workgroups);
 
-    // calculate the buffer indices for the tensor for the given global id
+    for (var index = index_range.x; index < index_range.y; index++) {
 
-    {% for binding in info.declaration.bindings %}
-        let index_{{ binding.name }} = p_{{ binding.name }}_offset()
-        + project(
-            id,
-            P_OP_STRIDES,
-            P_OP_SHAPE,
-            P_{{ binding.name|upper }}_STRIDES
-        );
-    {% endfor %}
+        // calculate the buffer indices for the tensors for the given global id
 
-    // perform the actual operation
+        {% for input in inputs %}
+            let index_{{ input }} = p_{{ input }}_offset()
+            + project(
+                index,
+                P_OP_STRIDES,
+                P_OP_SHAPE,
+                P_{{ input|upper }}_STRIDES
+            );
+            let value_{{ input }} = b_{{ input }}_decode(index_{{ input }});
+        {% endfor %}
 
-    {{ body }}
+        // perform the actual operation
+
+        {{ body }}
+
+        // write output
+
+        {% for output in outputs %}
+            let index_{{ output }} = p_{{ output }}_offset()
+            + project(
+                index,
+                P_OP_STRIDES,
+                P_OP_SHAPE,
+                P_{{ output|upper }}_STRIDES
+            );
+            b_{{ output }}_encode(index_{{ output }}, value_{{ output }});
+        {% endfor %}
+    }
 }

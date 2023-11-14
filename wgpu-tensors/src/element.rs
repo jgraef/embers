@@ -65,8 +65,14 @@ pub trait Encode: Sized {
     /// The type when encoded. This is written into the tensor buffer.
     type Encoded: Pod + WgslType;
 
+    /// The type used in the wgsl shader.
+    type Primitive: WgslType;
+
     /// How many elements fit into one [`Self::Encoded`] value.
     const NUM_PACKED: usize;
+
+    const WGSL_DECODE: &'static str;
+    const WGSL_ENCODE: &'static str;
 
     fn write_into(&self, destination: &mut Self::Encoded, i: usize);
 
@@ -99,8 +105,12 @@ pub trait TriviallyEncode: Pod + WgslType {}
 impl<T: TriviallyEncode> Encode for T {
     type Buffer = Unbuffered;
     type Encoded = Self;
+    type Primitive = Self;
 
     const NUM_PACKED: usize = 1;
+
+    const WGSL_DECODE: &'static str = "let value = encoded;";
+    const WGSL_ENCODE: &'static str = "*output = value;";
 
     fn write_into(&self, buffer: &mut Self::Encoded, i: usize) {
         assert_eq!(i, 0);
@@ -157,8 +167,19 @@ impl EncodeBuffer<bool> for BoolBuffer {
 impl Encode for bool {
     type Buffer = BoolBuffer;
     type Encoded = u32;
+    type Primitive = bool;
 
     const NUM_PACKED: usize = 32;
+
+    const WGSL_DECODE: &'static str = "let value = bool(encoded & (1 << i));";
+    const WGSL_ENCODE: &'static str = r#"
+    if value {
+        *output |= (1 << i);
+    }
+    else {
+        *output &= ~(1 << i);
+    }
+    "#;
 
     fn write_into(&self, buffer: &mut Self::Encoded, i: usize) {
         assert!(i < 32);

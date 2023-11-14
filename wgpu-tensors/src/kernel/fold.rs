@@ -11,7 +11,6 @@ use super::{
         KernelBindingDeclaration,
         KernelDeclaration,
         KernelParameterDeclaration,
-        KernelParameterType,
     },
     Kernel,
     KernelSignature,
@@ -137,11 +136,8 @@ impl<R: Element, A: Element> KernelSignature for FoldSignature<R, A> {
         Ok(())
     }
 
-    fn task_partition<'a, const D: usize>(
-        gpu: &crate::Gpu,
-        args: &Self::Args<'a, D>,
-    ) -> TaskPartition {
-        TaskPartition::from_shape(gpu, args.reduced.shape())
+    fn task_partition<'a, const D: usize>(args: &Self::Args<'a, D>) -> TaskPartition {
+        TaskPartition::for_result(&args.result)
     }
 }
 
@@ -206,16 +202,16 @@ macro_rules! fold_func {
 fold_func!(
     Sum,
     vec![StateVariable::new("s_sum", T::ZERO)],
-    "s_sum += x;",
-    "result[result_offset] = s_sum;",
+    "s_sum += value_input;",
+    "let value_result = s_sum;",
     sum
 );
 
 fold_func!(
     Product,
     vec![StateVariable::new("s_product", T::ONE)],
-    "s_product *= x;",
-    "result[result_offset] = s_product;",
+    "s_product *= value_input;",
+    "let value_result = s_product;",
     product
 );
 
@@ -224,10 +220,10 @@ fold_func!(
     vec![StateVariable {
         name: "s_min".into(),
         ty: T::TYPE_NAME.into(),
-        init: "input[input_offset]".into(),
+        init: "b_input_decode(input_index)".into(),
     }],
-    "if (x < s_min) { s_min = x; }",
-    "result[result_offset] = s_min;",
+    "if (value_input < s_min) { s_min = value_input; }",
+    "let value_result = s_min;",
     min
 );
 
@@ -236,9 +232,9 @@ fold_func!(
     vec![StateVariable {
         name: "s_max".into(),
         ty: T::TYPE_NAME.into(),
-        init: "input[input_offset]".into(),
+        init: "b_input_decode(input_index)".into(),
     }],
-    "if (x > s_max) { s_max = x; }",
-    "result[result_offset] = s_max;",
+    "if (value_input > s_max) { s_max = value_input; }",
+    "let value_result = s_max;",
     max
 );

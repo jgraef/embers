@@ -1,4 +1,7 @@
-use std::collections::BTreeMap;
+use std::{
+    collections::BTreeMap,
+    io::SeekFrom,
+};
 
 use byteorder::LittleEndian;
 use futures_lite::{
@@ -156,7 +159,7 @@ impl<R: AsyncReadExt + AsyncSeek + Unpin> Gguf<R> {
         let mut builder = Tensor::<D, T>::builder(gpu, shape);
 
         self.reader
-            .seek(std::io::SeekFrom::Start(tensor_info.offset))
+            .seek(SeekFrom::Start(tensor_info.offset))
             .await?;
 
         for _ in 0..num_elements {

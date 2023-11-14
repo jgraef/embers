@@ -19,10 +19,10 @@ macro_rules! cast_kernel {
         impl Map for Cast<$from, $target> {
             const LABEL: &'static str = concat!("Cast<", stringify!($target), ">");
             const BODY: &'static str = concat!(
-                "result[index_result] = ",
+                "let value_result = ",
                 stringify!($target), /* fixme: this doesn't work if the wgsl name isn't the same
                                       * as the rust name */
-                "(operand[index_operand]);"
+                "(value_operand);"
             );
             type Signature = UnarySignature<$target, $from>;
         }

@@ -43,8 +43,9 @@ impl KernelExecutor {
         args: <<K as Kernel>::Signature as KernelSignature>::Args<'a, D>,
     ) -> Result<(), KernelError> {
         let kernel_id = TypeId::of::<K>();
-        let task_partition = <K as Kernel>::Signature::task_partition(gpu, &args);
-        assert_eq!(task_partition.chunk_size, 1, "todo");
+
+        let task_partition = <K as Kernel>::Signature::task_partition(&args);
+        assert!(task_partition.chunk_size % K::Signature::DECLARATION.chunk_size() == 0, "chunk size must be a multiple of the chunk size required by the packing of the writable tensors");
 
         // fetch from cache or create compute pipeline
         // we only lock the cache for a short period to get the compute pipeline, which
@@ -63,7 +64,7 @@ impl KernelExecutor {
         };
 
         // create bind group
-        let mut kernel_binding_builder = KernelBindingBuilder::new(gpu, K::Signature::DECLARATION);
+        let mut kernel_binding_builder = KernelBindingBuilder::new(gpu, K::Signature::DECLARATION, task_partition.chunk_size);
         <K::Signature as KernelSignature>::build_bind_group(args, &mut kernel_binding_builder)?;
         let bind_group_layout = compute_pipeline.get_bind_group_layout(0);
         let bind_group = kernel_binding_builder.build(&bind_group_layout);
