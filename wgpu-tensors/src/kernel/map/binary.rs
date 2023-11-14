@@ -19,10 +19,8 @@ use crate::{
         binding::{
             KernelBindingBuilder,
             KernelBindingDeclaration,
-            KernelBindingReadWrite,
             KernelDeclaration,
             KernelParameterDeclaration,
-            KernelParameterType,
         },
         KernelSignature,
         TaskPartition,
@@ -46,55 +44,19 @@ pub struct BinarySignature<R: Element, A: Element, B: Element>(PhantomData<(R, A
 impl<R: Element, A: Element, B: Element> KernelSignature for BinarySignature<R, A, B> {
     const DECLARATION: KernelDeclaration = KernelDeclaration {
         bindings: &[
-            KernelBindingDeclaration {
-                name: "result",
-                ty: R::WGSL_TYPE,
-                read_write: KernelBindingReadWrite::ReadWrite,
-            },
-            KernelBindingDeclaration {
-                name: "operand_1",
-                ty: A::WGSL_TYPE,
-                read_write: KernelBindingReadWrite::ReadOnly,
-            },
-            KernelBindingDeclaration {
-                name: "operand_2",
-                ty: B::WGSL_TYPE,
-                read_write: KernelBindingReadWrite::ReadOnly,
-            },
+            KernelBindingDeclaration::read_write::<R>("result"),
+            KernelBindingDeclaration::read_only::<A>("operand_1"),
+            KernelBindingDeclaration::read_only::<B>("operand_2"),
         ],
         parameters: &[
-            KernelParameterDeclaration {
-                name: "op_strides",
-                ty: KernelParameterType::Shaped,
-            },
-            KernelParameterDeclaration {
-                name: "op_shape",
-                ty: KernelParameterType::Shaped,
-            },
-            KernelParameterDeclaration {
-                name: "result_offset",
-                ty: KernelParameterType::Int,
-            },
-            KernelParameterDeclaration {
-                name: "result_strides",
-                ty: KernelParameterType::Shaped,
-            },
-            KernelParameterDeclaration {
-                name: "operand_1_offset",
-                ty: KernelParameterType::Int,
-            },
-            KernelParameterDeclaration {
-                name: "operand_1_strides",
-                ty: KernelParameterType::Shaped,
-            },
-            KernelParameterDeclaration {
-                name: "operand_2_offset",
-                ty: KernelParameterType::Int,
-            },
-            KernelParameterDeclaration {
-                name: "operand_2_strides",
-                ty: KernelParameterType::Shaped,
-            },
+            KernelParameterDeclaration::shaped("op_strides"),
+            KernelParameterDeclaration::shaped("op_shape"),
+            KernelParameterDeclaration::int("result_offset"),
+            KernelParameterDeclaration::shaped("result_strides"),
+            KernelParameterDeclaration::int("operand_1_offset"),
+            KernelParameterDeclaration::shaped("operand_1_strides"),
+            KernelParameterDeclaration::int("operand_2_offset"),
+            KernelParameterDeclaration::shaped("operand_2_strides"),
         ],
     };
 
@@ -136,7 +98,7 @@ impl<R: Element, A: Element, B: Element> KernelSignature for BinarySignature<R, 
 }
 
 impl<const D: usize, A: Element> Tensor<D, A> {
-    async fn binary_elementwise<
+    pub async fn binary_elementwise<
         K: Map<Signature = BinarySignature<R, A, B>>,
         B: Element,
         R: Element,

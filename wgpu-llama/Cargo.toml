@@ -1,5 +1,5 @@
 [package]
-name = "wgpu-tensors-test"
+name = "wgpu-llama"
 version = "0.1.0"
 edition = "2021"
 authors = ["Janosch Gräf <janosch.graef@gmail.com>"]
@@ -16,7 +16,8 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 dotenvy = "0.15"
 color-eyre = "0.6"
-tokio = { version = "1.33", features = ["rt-multi-thread", "macros"] }
+tokio = { version = "1.33", features = ["rt-multi-thread", "macros", "io-util"] }
+thiserror = "1.0"
 
 [dependencies.wgpu-tensors]
 version = "0.1.0"

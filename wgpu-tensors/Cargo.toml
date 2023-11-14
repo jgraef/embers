@@ -23,6 +23,9 @@ ouroboros = "0.18"
 itertools = "0.11"
 concat-idents = "1.1"
 derivative = "2.2"
+half = { version = "2.3", features = ["bytemuck"] }
+futures-lite = "2.0"
+byteorder = "1.5"
 
 [dev-dependencies]
 pretty_assertions = "1"

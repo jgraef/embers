@@ -1,12 +1,10 @@
 pub mod binding;
+pub mod cast;
 pub mod executor;
 pub mod fold;
 pub mod map;
 
-use std::{
-    borrow::Cow,
-    fmt::Display,
-};
+use std::fmt::Display;
 
 use askama::Template;
 use wgpu::{
@@ -21,10 +19,6 @@ use self::binding::{
     KernelDeclaration,
 };
 use crate::{
-    element::{
-        Element,
-        WgslType,
-    },
     error::KernelError,
     gpu::Gpu,
     tensor::shape::Shape,
@@ -90,29 +84,6 @@ pub struct KernelTemplateInfo {
     pub label: &'static str,
     pub work_group_size: Vec3,
     pub declaration: KernelDeclaration,
-}
-
-#[derive(Debug)]
-pub struct BindingTemplate<'a> {
-    pub binding_id: BindingId,
-    pub rw: BindingReadWrite,
-    pub name: Cow<'a, str>,
-    pub data_type: WgslType,
-}
-
-impl<'a> BindingTemplate<'a> {
-    pub fn new<T: Element>(
-        binding_id: BindingId,
-        rw: BindingReadWrite,
-        name: impl Into<Cow<'a, str>>,
-    ) -> Self {
-        Self {
-            binding_id,
-            rw,
-            name: name.into(),
-            data_type: T::WGSL_TYPE,
-        }
-    }
 }
 
 #[derive(Copy, Clone, Debug)]

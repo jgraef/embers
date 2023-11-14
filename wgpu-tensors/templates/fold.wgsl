@@ -2,23 +2,15 @@
 
 {% include "common.wgsl" %}
 
-/*{#
-const NUM_THREADS = {{ num_threads }}u;
-var<workgroup> reducer_state: array<{{ state.data_type }}, NUM_THREADS>;
-#}*/
 
 @compute
 @workgroup_size({{ info.work_group_size.x }}, {{ info.work_group_size.y }}, {{ info.work_group_size.z }})
 fn main(
     @builtin(global_invocation_id) global_id: vec3<u32>,
-    //@builtin(local_invocation_id) local_id: vec3<u32>,
-    //@builtin(workgroup_id) workgroup_id: vec3<u32>,
     @builtin(num_workgroups) num_workgroups: vec3<u32>,
 ) {
     let id = i32(global_id.y * (num_workgroups.x * WORKGROUP_SIZE_X) + global_id.x);
-    //let local_id = local_id.x * NUM_THREADS + local_id.y;
 
-    let reduced_size = shape_size(P_REDUCED_SHAPE);
     let reducer_size = shape_size(P_REDUCER_SHAPE);
 
 
@@ -53,7 +45,6 @@ fn main(
         let x = input[reducer_offset];
 
         // apply folding function
-        //reducer_state = f(reducer_state, x);
         {{ apply }}
     }
 

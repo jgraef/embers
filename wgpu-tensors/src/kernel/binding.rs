@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     fmt::Display,
     mem::size_of,
 };
@@ -144,15 +145,17 @@ impl<'gpu, 'tensor, const D: usize> KernelBindingBuilder<'gpu, 'tensor, D> {
     }
 
     fn check_binding<T: Element>(&self, name: &'static str) -> Result<(), KernelBindingError> {
-        let ty = T::WGSL_TYPE;
+        let ty = T::Encoded::TYPE_NAME;
 
         let index = self.binding_index;
 
-        let declaration = self
-            .declarations
-            .bindings
-            .get(index)
-            .ok_or_else(|| KernelBindingError::NoDeclaration { index, name, ty })?;
+        let declaration = self.declarations.bindings.get(index).ok_or_else(|| {
+            KernelBindingError::NoDeclaration {
+                index,
+                name,
+                ty: ty.into(),
+            }
+        })?;
 
         if declaration.name != name {
             return Err(KernelBindingError::NameMismatch {
@@ -226,7 +229,7 @@ pub enum KernelBindingError {
     NoDeclaration {
         index: usize,
         name: &'static str,
-        ty: WgslType,
+        ty: Cow<'static, str>,
     },
 
     #[error("expected field {name_expected}, but got {name_got}.")]
@@ -240,8 +243,8 @@ pub enum KernelBindingError {
     TypeMismatch {
         index: usize,
         name: &'static str,
-        ty_got: WgslType,
-        ty_expected: WgslType,
+        ty_got: &'static str,
+        ty_expected: &'static str,
     },
 }
 
@@ -310,7 +313,7 @@ impl<const D: usize> From<Strider<D>> for KernelParameter<D> {
 #[derive(Clone, Copy, Debug)]
 pub struct KernelBindingDeclaration {
     pub name: &'static str,
-    pub ty: WgslType,
+    pub ty: &'static str,
     pub read_write: KernelBindingReadWrite,
 }
 
@@ -318,7 +321,7 @@ impl KernelBindingDeclaration {
     pub const fn read_only<T: Element>(name: &'static str) -> Self {
         Self {
             name,
-            ty: T::WGSL_TYPE,
+            ty: T::Encoded::TYPE_NAME,
             read_write: KernelBindingReadWrite::ReadOnly,
         }
     }
@@ -326,7 +329,7 @@ impl KernelBindingDeclaration {
     pub const fn read_write<T: Element>(name: &'static str) -> Self {
         Self {
             name,
-            ty: T::WGSL_TYPE,
+            ty: T::Encoded::TYPE_NAME,
             read_write: KernelBindingReadWrite::ReadWrite,
         }
     }

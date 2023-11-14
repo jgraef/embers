@@ -66,6 +66,13 @@ pub enum KernelError {
 }
 
 #[derive(Debug, thiserror::Error)]
+#[error("expected {expected} dimensions, but got {got}")]
+pub struct DimensionMismatch {
+    pub expected: usize,
+    pub got: usize,
+}
+
+#[derive(Debug, thiserror::Error)]
 #[error("invalid axis {axis} for {dimensions}-dimensional tensor")]
 pub struct InvalidAxis {
     pub axis: usize,

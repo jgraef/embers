@@ -11,10 +11,8 @@ use crate::{
         binding::{
             KernelBindingBuilder,
             KernelBindingDeclaration,
-            KernelBindingReadWrite,
             KernelDeclaration,
             KernelParameterDeclaration,
-            KernelParameterType,
         },
         map::Map,
         KernelSignature,
@@ -37,42 +35,16 @@ pub struct UnarySignature<R: Element, A: Element>(PhantomData<(R, A)>);
 impl<R: Element, A: Element> KernelSignature for UnarySignature<R, A> {
     const DECLARATION: KernelDeclaration = KernelDeclaration {
         bindings: &[
-            KernelBindingDeclaration {
-                name: "result",
-                ty: R::WGSL_TYPE,
-                read_write: KernelBindingReadWrite::ReadWrite,
-            },
-            KernelBindingDeclaration {
-                name: "operand",
-                ty: A::WGSL_TYPE,
-                read_write: KernelBindingReadWrite::ReadOnly,
-            },
+            KernelBindingDeclaration::read_write::<R>("result"),
+            KernelBindingDeclaration::read_only::<A>("operand"),
         ],
         parameters: &[
-            KernelParameterDeclaration {
-                name: "op_strides",
-                ty: KernelParameterType::Shaped,
-            },
-            KernelParameterDeclaration {
-                name: "op_shape",
-                ty: KernelParameterType::Shaped,
-            },
-            KernelParameterDeclaration {
-                name: "result_offset",
-                ty: KernelParameterType::Int,
-            },
-            KernelParameterDeclaration {
-                name: "result_strides",
-                ty: KernelParameterType::Shaped,
-            },
-            KernelParameterDeclaration {
-                name: "operand_offset",
-                ty: KernelParameterType::Int,
-            },
-            KernelParameterDeclaration {
-                name: "operand_strides",
-                ty: KernelParameterType::Shaped,
-            },
+            KernelParameterDeclaration::shaped("op_strides"),
+            KernelParameterDeclaration::shaped("op_shape"),
+            KernelParameterDeclaration::int("result_offset"),
+            KernelParameterDeclaration::shaped("result_strides"),
+            KernelParameterDeclaration::int("operand_offset"),
+            KernelParameterDeclaration::shaped("operand_strides"),
         ],
     };
 
@@ -109,7 +81,7 @@ impl<R: Element, A: Element> KernelSignature for UnarySignature<R, A> {
 }
 
 impl<const D: usize, T: Element> Tensor<D, T> {
-    async fn map_unary_elementwise<'a, M: Map<Signature = UnarySignature<R, T>>, R: Element>(
+    pub async fn map_unary_elementwise<'a, M: Map<Signature = UnarySignature<R, T>>, R: Element>(
         &self,
     ) -> Result<Tensor<D, R>, KernelError> {
         let mut result = Tensor::allocate(&self.gpu, self.shape());

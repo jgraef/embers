@@ -1,12 +1,6 @@
-use std::{
-    fmt::Debug,
-    marker::PhantomData,
-    ops::{
-        Deref,
-        Index,
-    },
-};
+use std::fmt::Debug;
 
+use bytemuck::Pod;
 use ouroboros::self_referencing;
 
 use super::{
@@ -14,36 +8,36 @@ use super::{
         MapTensorBufferError,
         MappedTensorBuffer,
         MappedTensorBufferView,
-        TensorBuffer,
     },
     strider::{
         Strider,
         TensorIndex,
     },
 };
-use crate::element::Element;
-
-pub struct TensorView<const D: usize, T: Element> {
-    inner: TensorViewInner,
-    strider: Strider<D>,
-    _t: PhantomData<T>,
-}
+use crate::element::{
+    Element,
+    Encode,
+};
 
 #[self_referencing]
-struct TensorViewInner {
-    mapped_buffer: MappedTensorBuffer,
+struct TensorViewInner<T: Pod> {
+    mapped_buffer: MappedTensorBuffer<T>,
     #[borrows(mapped_buffer)]
     #[covariant]
-    view: MappedTensorBufferView<'this>,
+    view: MappedTensorBufferView<'this, T>,
 }
 
-impl<const D: usize, T: Element> TensorView<D, T> {
+pub struct TensorView<const D: usize, T: Encode> {
+    inner: TensorViewInner<T::Encoded>,
+    strider: Strider<D>,
+}
+
+impl<const D: usize, T: Encode> TensorView<D, T> {
     pub(crate) async fn new(
-        tensor_buffer: &TensorBuffer,
+        mapped_buffer: MappedTensorBuffer<T::Encoded>,
         strider: Strider<D>,
     ) -> Result<Self, MapTensorBufferError> {
-        let mapped_buffer = tensor_buffer.map(false).await?;
-
+        assert!(strider.is_contiguous());
         Ok(Self {
             inner: TensorViewInnerTryBuilder {
                 mapped_buffer,
@@ -51,34 +45,61 @@ impl<const D: usize, T: Element> TensorView<D, T> {
             }
             .try_build()?,
             strider,
-            _t: PhantomData,
         })
     }
 
     pub fn shape(&self) -> [usize; D] {
         self.strider.shape()
     }
-}
 
-impl<const D: usize, T: Element> Deref for TensorView<D, T> {
-    type Target = [T];
-
-    fn deref(&self) -> &Self::Target {
-        bytemuck::cast_slice(&self.inner.borrow_view())
+    fn read(&self, index: usize) -> T {
+        let (offset, i) = T::buffer_index(index);
+        let view = self.inner.borrow_view();
+        let view = bytemuck::cast_slice(view);
+        T::read_from(&view[offset], i)
     }
-}
 
-impl<const D: usize, T: Element, I: TensorIndex<D>> Index<I> for TensorView<D, T> {
-    type Output = T;
+    pub fn get(&self, index: impl TensorIndex<D>) -> T {
+        self.read(self.strider.buffer_offset(index).unwrap())
+    }
 
-    fn index(&self, index: I) -> &Self::Output {
-        let buffer_offset = self.strider.buffer_offset(index).unwrap();
-        &self.deref()[buffer_offset]
+    pub fn iter(&self) -> TensorViewIterator<D, T> {
+        TensorViewIterator {
+            view: self,
+            index: 0,
+            num_elements: self.strider.shape_size(),
+        }
+    }
+
+    pub fn to_vec(&self) -> Vec<T> {
+        self.iter().collect()
     }
 }
 
 impl<const D: usize, T: Element> Debug for TensorView<D, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_list().entries(self.deref()).finish()
+        f.debug_list().entries(self.iter()).finish()
+    }
+}
+
+pub struct TensorViewIterator<'a, const D: usize, T: Encode> {
+    view: &'a TensorView<D, T>,
+    index: usize,
+    num_elements: usize,
+}
+
+impl<'a, const D: usize, T: Encode> Iterator for TensorViewIterator<'a, D, T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        assert!(self.index <= self.num_elements);
+        if self.index == self.num_elements {
+            None
+        }
+        else {
+            let value = self.view.read(self.index);
+            self.index += 1;
+            Some(value)
+        }
     }
 }

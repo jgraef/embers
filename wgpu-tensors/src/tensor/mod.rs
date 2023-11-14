@@ -1,12 +1,10 @@
 pub mod buffer;
+pub mod builder;
 pub mod shape;
 pub mod strider;
 pub mod view;
 
-use std::{
-    marker::PhantomData,
-    mem::size_of,
-};
+use std::mem::size_of;
 
 use derivative::Derivative;
 use itertools::Itertools;
@@ -17,16 +15,21 @@ use self::{
         TensorBuffer,
         TensorBufferUsage,
     },
+    builder::TensorBuilder,
     shape::Shape,
     strider::{
         Strider,
-        TensorIndexIterator,
         TensorRangeBounds,
     },
     view::TensorView,
 };
 use crate::{
-    element::Element,
+    element::{
+        Element,
+        Encode,
+        One,
+        Zero,
+    },
     error::{
         InvalidAxis,
         SliceError,
@@ -41,12 +44,9 @@ pub struct Tensor<const D: usize, T: Element> {
     pub(crate) gpu: Gpu,
 
     #[derivative(Debug = "ignore")]
-    pub(crate) buffer: TensorBuffer,
+    pub(crate) buffer: TensorBuffer<<T as Encode>::Encoded>,
 
     pub(crate) strider: Strider<D>,
-
-    #[derivative(Debug = "ignore")]
-    _t: PhantomData<T>,
 }
 
 impl<const D: usize, T: Element> Tensor<D, T> {
@@ -55,86 +55,65 @@ impl<const D: usize, T: Element> Tensor<D, T> {
         let label = "Tensor::allocate";
         let usage = TensorBufferUsage::Compute;
 
-        let buffer = TensorBuffer::allocate(gpu, size * size_of::<T>(), usage, label);
+        let buffer = TensorBuffer::allocate(gpu, size, usage, label);
         let strider = Strider::contiguous(shape);
 
         Self {
             gpu: gpu.clone(),
             buffer,
             strider,
-            _t: PhantomData,
         }
     }
 
-    fn allocate_and_initialize(
-        gpu: &Gpu,
-        shape: [usize; D],
-        mut initializer: impl FnMut(&mut [T]),
+    pub(crate) fn new(
+        gpu: Gpu,
+        buffer: TensorBuffer<<T as Encode>::Encoded>,
+        strider: Strider<D>,
     ) -> Self {
-        let size = shape.size();
-        let usage = TensorBufferUsage::Compute;
-        let label = "Tensor::from_data";
-
-        let buffer = if size == 0 {
-            TensorBuffer::allocate(gpu, size, usage, label)
-        }
-        else {
-            let (buffer, mut mapped) =
-                TensorBuffer::mapped(gpu, size * size_of::<T>(), usage, label);
-
-            let mut view = mapped.view_mut().unwrap();
-            let copy_to = bytemuck::cast_slice_mut::<_, T>(&mut view);
-            let copy_to = &mut copy_to[..size];
-            initializer(copy_to);
-
-            buffer
-        };
-
-        let strider = Strider::contiguous(shape);
-
         Self {
-            gpu: gpu.clone(),
+            gpu,
             buffer,
             strider,
-            _t: PhantomData,
         }
     }
 
-    pub fn from_data(gpu: &Gpu, shape: [usize; D], data: &[T]) -> Self {
-        let size = shape.size();
-        if size != data.len() {
-            panic!(
-                "shape size ({}) and data size ({}) don't match",
-                size,
-                data.len()
-            );
-        }
-
-        Self::allocate_and_initialize(gpu, shape, |d| d.copy_from_slice(data))
+    pub fn builder(gpu: &Gpu, shape: [usize; D]) -> TensorBuilder<D, T> {
+        TensorBuilder::new(gpu, shape, "Tensor::builder")
     }
 
-    pub fn from_closure(
-        gpu: &Gpu,
-        shape: [usize; D],
-        mut f: impl FnMut(usize, [usize; D]) -> T,
-    ) -> Self {
-        Self::allocate_and_initialize(gpu, shape, |d| {
-            TensorIndexIterator::new(shape)
-                .zip(d)
-                .enumerate()
-                .for_each(|(i, (x, v))| *v = f(i, x))
-        })
+    pub fn from_iter(gpu: &Gpu, shape: [usize; D], iter: impl IntoIterator<Item = T>) -> Self {
+        let mut builder = TensorBuilder::new(gpu, shape, "Tensor::from_iter");
+        for x in iter {
+            builder.write_element(x);
+        }
+        builder.build()
+    }
+
+    pub fn from_closure(gpu: &Gpu, shape: [usize; D], mut f: impl FnMut([usize; D]) -> T) -> Self {
+        let mut builder = TensorBuilder::new(gpu, shape, "Tensor::from_closure");
+
+        while !builder.is_full() {
+            let value = f(builder.index().unwrap());
+            builder.write_element(value);
+        }
+        builder.build()
     }
 
     pub fn repeat(gpu: &Gpu, shape: [usize; D], value: T) -> Self {
-        Self::allocate_and_initialize(gpu, shape, |d| d.iter_mut().for_each(|x| *x = value))
+        Self::from_closure(gpu, shape, |_| value)
     }
 
-    pub fn zeroes(gpu: &Gpu, shape: [usize; D]) -> Self {
+    pub fn zeroes(gpu: &Gpu, shape: [usize; D]) -> Self
+    where
+        T: Zero,
+    {
         Self::repeat(gpu, shape, T::ZERO)
     }
 
-    pub fn ones(gpu: &Gpu, shape: [usize; D]) -> Self {
+    pub fn ones(gpu: &Gpu, shape: [usize; D]) -> Self
+    where
+        T: One,
+    {
         Self::repeat(gpu, shape, T::ONE)
     }
 
@@ -144,7 +123,7 @@ impl<const D: usize, T: Element> Tensor<D, T> {
         value_on_diagonal: T,
         value_everywhere_else: T,
     ) -> Self {
-        Self::from_closure(gpu, shape, |_, x| {
+        Self::from_closure(gpu, shape, |x| {
             x.iter()
                 .all_equal()
                 .then_some(value_on_diagonal)
@@ -171,12 +150,7 @@ impl<const D: usize, T: Element> Tensor<D, T> {
     pub(crate) fn with_strider<const E: usize>(&self, strider: Strider<E>) -> Tensor<E, T> {
         assert!(self.strider.size() <= strider.size());
 
-        Tensor {
-            gpu: self.gpu.clone(),
-            buffer: self.buffer.clone(),
-            strider,
-            _t: PhantomData,
-        }
+        Tensor::new(self.gpu.clone(), self.buffer.clone(), strider)
     }
 
     async fn as_owned(&self) -> Tensor<D, T> {
@@ -208,7 +182,7 @@ impl<const D: usize, T: Element> Tensor<D, T> {
         Some(self.with_strider(strider))
     }
 
-    async fn copy_to_buffer(&self, destination: &TensorBuffer) {
+    async fn copy_to_buffer(&self, destination: &TensorBuffer<<T as Encode>::Encoded>) {
         assert_eq!(destination.usage(), TensorBufferUsage::CopyToHost);
         assert!(self.strider.is_contiguous());
 
@@ -247,7 +221,10 @@ impl<const D: usize, T: Element> Tensor<D, T> {
 
         tensor.copy_to_buffer(&view_buffer).await;
 
-        let view = TensorView::new(&view_buffer, tensor.strider).await.unwrap();
+        let mapped_buffer = view_buffer.map(false).await.unwrap();
+        let view = TensorView::new(mapped_buffer, tensor.strider)
+            .await
+            .unwrap();
 
         view
     }
@@ -283,7 +260,7 @@ impl<const D: usize, T: Element> Tensor<D, T> {
     }
 }
 
-impl<T: Element> Tensor<2, T> {
+impl<T: Element + Zero + One> Tensor<2, T> {
     pub fn eye(gpu: &Gpu, rows: usize, columns: usize) -> Self {
         let shape = [rows, columns];
 

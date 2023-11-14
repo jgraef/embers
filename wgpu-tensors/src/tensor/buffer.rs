@@ -1,4 +1,6 @@
 use std::{
+    marker::PhantomData,
+    mem::size_of,
     ops::{
         Deref,
         DerefMut,
@@ -12,6 +14,7 @@ use std::{
     },
 };
 
+use bytemuck::Pod;
 use ouroboros::self_referencing;
 use wgpu::{
     BindingResource,
@@ -44,13 +47,15 @@ impl Drop for TensorBufferInner {
 }
 
 #[derive(Clone, Debug)]
-pub struct TensorBuffer {
+pub struct TensorBuffer<T: Pod> {
     inner: Arc<TensorBufferInner>,
+    _t: PhantomData<T>,
 }
 
-impl TensorBuffer {
+impl<T: Pod> TensorBuffer<T> {
     /// Allocate a tensor buffer
     pub fn allocate(gpu: &Gpu, size: usize, usage: TensorBufferUsage, label: &str) -> Self {
+        let size = size * size_of::<T>();
         let size: BufferAddress = size.try_into().unwrap();
 
         let buffer = gpu.device().create_buffer(&BufferDescriptor {
@@ -66,6 +71,7 @@ impl TensorBuffer {
                 usage,
                 map_count: AtomicUsize::new(0),
             }),
+            _t: PhantomData,
         }
     }
 
@@ -76,7 +82,8 @@ impl TensorBuffer {
         size: usize,
         usage: TensorBufferUsage,
         label: &str,
-    ) -> (Self, MappedTensorBuffer) {
+    ) -> (Self, MappedTensorBuffer<T>) {
+        let size = size * size_of::<T>();
         let unpadded_size: BufferAddress = size.try_into().unwrap();
         let buffer = create_mapped_buffer(gpu, unpadded_size, label, usage.into());
 
@@ -86,13 +93,14 @@ impl TensorBuffer {
                 usage,
                 map_count: AtomicUsize::new(1),
             }),
+            _t: PhantomData,
         };
 
         let mapped_tensor_buffer = MappedTensorBuffer {
             inner: MappedTensorBufferInnerBuilder {
                 buffer: tensor_buffer.clone(),
                 map_write: true,
-                slice_builder: move |buffer: &TensorBuffer| buffer.inner.buffer.slice(..),
+                slice_builder: move |buffer: &TensorBuffer<T>| buffer.inner.buffer.slice(..),
             }
             .build(),
         };
@@ -123,7 +131,7 @@ impl TensorBuffer {
     }
 
     /// map buffer to host memory
-    pub async fn map(&self, writable: bool) -> Result<MappedTensorBuffer, MapTensorBufferError> {
+    pub async fn map(&self, writable: bool) -> Result<MappedTensorBuffer<T>, MapTensorBufferError> {
         self.usage().check_map(writable)?;
 
         let map_mode = writable.then_some(MapMode::Write).unwrap_or(MapMode::Read);
@@ -131,7 +139,7 @@ impl TensorBuffer {
         let inner = MappedTensorBufferInnerAsyncTryBuilder {
             buffer: self.clone(),
             map_write: writable,
-            slice_builder: move |buffer: &TensorBuffer| {
+            slice_builder: move |buffer: &TensorBuffer<T>| {
                 Box::pin(async move {
                     let slice = buffer.inner.buffer.slice(..);
                     // we always tell wgpu to map the buffer. otherwise there could be a race
@@ -174,9 +182,9 @@ pub enum MapTensorBufferError {
 /// we also need a separate struct, so we can define our own Drop impl for
 /// `MappedTensorBuffer`
 #[self_referencing]
-struct MappedTensorBufferInner {
+struct MappedTensorBufferInner<T: Pod> {
     // the tensor is contiguous and mapped to memory.
-    buffer: TensorBuffer,
+    buffer: TensorBuffer<T>,
 
     map_write: bool,
 
@@ -185,12 +193,14 @@ struct MappedTensorBufferInner {
     slice: AsyncBufferSlice<'this>,
 }
 
-pub struct MappedTensorBuffer {
-    inner: MappedTensorBufferInner,
+pub struct MappedTensorBuffer<T: Pod> {
+    inner: MappedTensorBufferInner<T>,
 }
 
-impl MappedTensorBuffer {
-    pub fn view<'a>(&'a self) -> Result<MappedTensorBufferView<'a>, MappedTensorBufferViewError> {
+impl<T: Pod> MappedTensorBuffer<T> {
+    pub fn view<'a>(
+        &'a self,
+    ) -> Result<MappedTensorBufferView<'a, T>, MappedTensorBufferViewError> {
         let buffer = self.inner.borrow_buffer().clone();
         let buffer_view = self.inner.borrow_slice().get_mapped_range();
         Ok(MappedTensorBufferView {
@@ -201,7 +211,7 @@ impl MappedTensorBuffer {
 
     pub fn view_mut<'a>(
         &'a mut self,
-    ) -> Result<MappedTensorBufferViewMut<'a>, MappedTensorBufferViewError> {
+    ) -> Result<MappedTensorBufferViewMut<'a, T>, MappedTensorBufferViewError> {
         if !*self.inner.borrow_map_write() {
             return Err(MappedTensorBufferViewError::NotMappedWritable);
         }
@@ -214,9 +224,13 @@ impl MappedTensorBuffer {
             buffer_view,
         })
     }
+
+    pub fn buffer(&self) -> &TensorBuffer<T> {
+        self.inner.borrow_buffer()
+    }
 }
 
-impl Drop for MappedTensorBuffer {
+impl<T: Pod> Drop for MappedTensorBuffer<T> {
     fn drop(&mut self) {
         let buffer = self.inner.borrow_buffer();
         if buffer.inner.map_count.fetch_sub(1, Ordering::Relaxed) == 1 {
@@ -238,35 +252,35 @@ pub enum MappedTensorBufferViewError {
     AlreadyMutBorrowed,
 }
 
-pub struct MappedTensorBufferView<'a> {
-    buffer: TensorBuffer,
+pub struct MappedTensorBufferView<'a, T: Pod> {
+    buffer: TensorBuffer<T>,
     buffer_view: BufferView<'a>,
 }
 
-impl<'a> Deref for MappedTensorBufferView<'a> {
-    type Target = [u8];
+impl<'a, T: Pod> Deref for MappedTensorBufferView<'a, T> {
+    type Target = [T];
 
     fn deref(&self) -> &Self::Target {
-        &self.buffer_view
+        bytemuck::cast_slice(&self.buffer_view)
     }
 }
 
-pub struct MappedTensorBufferViewMut<'a> {
-    buffer: TensorBuffer,
+pub struct MappedTensorBufferViewMut<'a, T: Pod> {
+    buffer: TensorBuffer<T>,
     buffer_view: BufferViewMut<'a>,
 }
 
-impl<'a> Deref for MappedTensorBufferViewMut<'a> {
-    type Target = [u8];
+impl<'a, T: Pod> Deref for MappedTensorBufferViewMut<'a, T> {
+    type Target = [T];
 
     fn deref(&self) -> &Self::Target {
-        &self.buffer_view
+        bytemuck::cast_slice(&self.buffer_view)
     }
 }
 
-impl<'a> DerefMut for MappedTensorBufferViewMut<'a> {
+impl<'a, T: Pod> DerefMut for MappedTensorBufferViewMut<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.buffer_view
+        bytemuck::cast_slice_mut(&mut self.buffer_view)
     }
 }
 

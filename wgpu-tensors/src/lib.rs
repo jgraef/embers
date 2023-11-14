@@ -1,8 +1,9 @@
 #![allow(dead_code, incomplete_features)]
-#![feature(generic_const_exprs, associated_const_equality)]
+#![feature(generic_const_exprs)]
 
 pub mod element;
 pub mod error;
+pub mod file_formats;
 pub mod gpu;
 pub mod kernel;
 pub mod tensor;

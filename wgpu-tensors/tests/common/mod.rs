@@ -15,5 +15,5 @@ pub async fn gpu() -> Gpu {
 }
 
 pub async fn tensor_to_vec<const D: usize, T: Element>(tensor: &Tensor<D, T>) -> Vec<T> {
-    tensor.view().await.into_iter().copied().collect()
+    tensor.view().await.iter().collect()
 }

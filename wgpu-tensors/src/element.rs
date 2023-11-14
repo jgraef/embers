@@ -1,109 +1,218 @@
-use std::fmt::{
-    Debug,
-    Display,
+use std::{
+    borrow::Cow,
+    fmt::Debug,
 };
 
 use bytemuck::Pod;
+use half::f16;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum WgslType {
-    Bool,
-    I32,
-    U32,
-    F32,
-    F16,
+pub trait WgslType {
+    const TYPE_NAME: &'static str;
+
+    fn wgsl_literal(&self) -> Cow<'static, str>;
 }
 
-impl Display for WgslType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = match self {
-            WgslType::Bool => "bool",
-            WgslType::I32 => "i32",
-            WgslType::U32 => "u32",
-            WgslType::F32 => "f32",
-            WgslType::F16 => "f16",
-        };
-        write!(f, "{s}")
+impl WgslType for bool {
+    const TYPE_NAME: &'static str = "bool";
+
+    fn wgsl_literal(&self) -> Cow<'static, str> {
+        self.then_some("true").unwrap_or("false").into()
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum WgslValue {
-    Bool(bool),
-    I32(i32),
-    U32(u32),
-    F32(f32),
-    F16(f32),
+impl WgslType for i32 {
+    const TYPE_NAME: &'static str = "i32";
+
+    fn wgsl_literal(&self) -> Cow<'static, str> {
+        format!("{}i", self).into()
+    }
 }
 
-impl WgslValue {
-    fn wgsl_type(&self) -> WgslType {
-        match self {
-            WgslValue::Bool(_) => WgslType::Bool,
-            WgslValue::I32(_) => WgslType::I32,
-            WgslValue::U32(_) => WgslType::U32,
-            WgslValue::F32(_) => WgslType::F32,
-            WgslValue::F16(_) => WgslType::F16,
+impl WgslType for u32 {
+    const TYPE_NAME: &'static str = "u32";
+
+    fn wgsl_literal(&self) -> Cow<'static, str> {
+        format!("{}u", self).into()
+    }
+}
+
+impl WgslType for f32 {
+    const TYPE_NAME: &'static str = "f32";
+
+    fn wgsl_literal(&self) -> Cow<'static, str> {
+        format!("{}f", self).into()
+    }
+}
+
+impl WgslType for f16 {
+    const TYPE_NAME: &'static str = "f16";
+
+    fn wgsl_literal(&self) -> Cow<'static, str> {
+        format!("{}f16", self).into()
+    }
+}
+
+pub trait EncodeBuffer<T: Encode>: Default {
+    fn write(&mut self, value: T) -> Option<T::Encoded>;
+    fn flush(self) -> Option<T::Encoded>;
+}
+
+/// Trait that defines how elements are encoded when written to or read from a
+/// tensor buffer, and how a kernel accesses these encoded elements.
+pub trait Encode: Sized {
+    type Buffer: EncodeBuffer<Self>;
+
+    /// The type when encoded. This is written into the tensor buffer.
+    type Encoded: Pod + WgslType;
+
+    /// How many elements fit into one [`Self::Encoded`] value.
+    const NUM_PACKED: usize;
+
+    fn write_into(&self, destination: &mut Self::Encoded, i: usize);
+
+    fn read_from(source: &Self::Encoded, i: usize) -> Self;
+
+    fn encoded_size(num_elements: usize) -> usize {
+        num_elements.div_ceil(Self::NUM_PACKED)
+    }
+
+    fn buffer_index(index: usize) -> (usize, usize) {
+        (index / Self::NUM_PACKED, index % Self::NUM_PACKED)
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct Unbuffered;
+
+impl<T: Encode<Encoded = T>> EncodeBuffer<T> for Unbuffered {
+    fn write(&mut self, value: T) -> Option<<T as Encode>::Encoded> {
+        Some(value)
+    }
+
+    fn flush(self) -> Option<<T as Encode>::Encoded> {
+        None
+    }
+}
+
+pub trait TriviallyEncode: Pod + WgslType {}
+
+impl<T: TriviallyEncode> Encode for T {
+    type Buffer = Unbuffered;
+    type Encoded = Self;
+
+    const NUM_PACKED: usize = 1;
+
+    fn write_into(&self, buffer: &mut Self::Encoded, i: usize) {
+        assert_eq!(i, 0);
+        *buffer = *self;
+    }
+
+    fn read_from(buffer: &Self::Encoded, i: usize) -> Self {
+        assert_eq!(i, 0);
+        *buffer
+    }
+}
+
+impl TriviallyEncode for u32 {}
+impl TriviallyEncode for i32 {}
+impl TriviallyEncode for f32 {}
+impl TriviallyEncode for f16 {}
+
+#[derive(Debug, Default)]
+pub struct BoolBuffer {
+    buf: u32,
+    i: usize,
+}
+
+impl EncodeBuffer<bool> for BoolBuffer {
+    fn write(&mut self, value: bool) -> Option<<bool as Encode>::Encoded> {
+        if value {
+            self.buf |= 1 << self.i;
+        }
+        else {
+            self.buf &= !(1 << self.i);
+        }
+
+        self.i += 1;
+        if self.i == 32 {
+            let value = self.buf;
+            self.buf = 0;
+            Some(value)
+        }
+        else {
+            None
+        }
+    }
+
+    fn flush(self) -> Option<<bool as Encode>::Encoded> {
+        if self.i > 0 {
+            Some(self.buf)
+        }
+        else {
+            None
         }
     }
 }
 
-impl From<bool> for WgslValue {
-    fn from(value: bool) -> Self {
-        Self::Bool(value)
-    }
-}
+impl Encode for bool {
+    type Buffer = BoolBuffer;
+    type Encoded = u32;
 
-impl From<i32> for WgslValue {
-    fn from(value: i32) -> Self {
-        Self::I32(value)
-    }
-}
+    const NUM_PACKED: usize = 32;
 
-impl From<u32> for WgslValue {
-    fn from(value: u32) -> Self {
-        Self::U32(value)
-    }
-}
-
-impl From<f32> for WgslValue {
-    fn from(value: f32) -> Self {
-        Self::F32(value)
-    }
-}
-
-impl Display for WgslValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            WgslValue::Bool(value) => write!(f, "{value}"),
-            WgslValue::I32(value) => write!(f, "{value}i"),
-            WgslValue::U32(value) => write!(f, "{value}u"),
-            WgslValue::F32(value) => write!(f, "{value}f"),
-            WgslValue::F16(value) => write!(f, "f16({value}f)"),
+    fn write_into(&self, buffer: &mut Self::Encoded, i: usize) {
+        assert!(i < 32);
+        if *self {
+            *buffer |= 1 << i;
+        }
+        else {
+            *buffer &= !(1 << i);
         }
     }
+
+    fn read_from(buffer: &Self::Encoded, i: usize) -> Self {
+        assert!(i < 32);
+        *buffer & (1 << i) != 0
+    }
 }
 
-pub trait Element: Copy + Debug + Pod + Into<WgslValue> {
-    const WGSL_TYPE: WgslType;
+pub trait Zero {
     const ZERO: Self;
+}
+
+pub trait One {
     const ONE: Self;
 }
 
-pub trait Number {}
-
-impl Element for f32 {
-    const WGSL_TYPE: WgslType = WgslType::F32;
-    const ZERO: Self = 0.;
-    const ONE: Self = 1.;
+macro_rules! impl_zero_and_one {
+    ($ty:ident, $zero:expr, $one:expr) => {
+        impl Zero for $ty {
+            const ZERO: Self = $zero;
+        }
+        impl One for $ty {
+            const ONE: Self = $one;
+        }
+    };
 }
 
-impl Number for f32 {}
+impl_zero_and_one!(i32, 0, 1);
+impl_zero_and_one!(u32, 0, 1);
+impl_zero_and_one!(f32, 0., 1.);
+impl_zero_and_one!(f16, f16::from_f32_const(0.), f16::from_f32_const(1.));
+impl_zero_and_one!(bool, false, true);
 
-impl Element for i32 {
-    const WGSL_TYPE: WgslType = WgslType::I32;
-    const ZERO: Self = 0;
-    const ONE: Self = 1;
-}
+pub trait Element: Copy + Debug + Encode + 'static {}
 
+impl Element for u32 {}
+impl Element for i32 {}
+impl Element for f32 {}
+impl Element for f16 {}
+impl Element for bool {}
+
+pub trait Number: Zero + One {}
+
+impl Number for u32 {}
 impl Number for i32 {}
+impl Number for f32 {}
+impl Number for f16 {}
+impl Number for bool {}

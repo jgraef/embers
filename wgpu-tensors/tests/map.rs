@@ -28,7 +28,7 @@ macro_rules! test_unary_elementwise {
         async fn $name() {
             let gpu = gpu().await;
 
-            let t1 = Tensor::from_data(&gpu, [3, 3], &$d1);
+            let t1 = Tensor::from_iter(&gpu, [3, 3], $d1);
 
             let t2 = t1.$tensor_method().await.unwrap();
 
@@ -50,8 +50,8 @@ macro_rules! test_binary_elementwise {
         async fn $name() {
             let gpu = gpu().await;
 
-            let t1 = Tensor::from_data(&gpu, [3, 3], &$d1);
-            let t2 = Tensor::from_data(&gpu, [3, 3], &$d2);
+            let t1 = Tensor::from_iter(&gpu, [3, 3], $d1);
+            let t2 = Tensor::from_iter(&gpu, [3, 3], $d2);
 
             let t3 = t1.$tensor_method(&t2).await.unwrap();
 
@@ -77,12 +77,28 @@ test_binary_elementwise!(it_divides_elementwise, div, |a, b| a / b);
 test_binary_elementwise!(it_modulos_elementwise, modulo, |a, b| a % b);
 
 #[tokio::test]
-async fn test_broadcast() {
+async fn it_broadcasts_with_same_dim() {
     let gpu = gpu().await;
 
-    let t1 = Tensor::from_data(&gpu, [3, 3], &D1I);
-    let t2 = Tensor::from_data(&gpu, [1, 3], &[1, 2, 3]);
+    let t1 = Tensor::from_iter(&gpu, [3, 3], D1I);
+    let t2 = Tensor::from_iter(&gpu, [1, 3], [1, 2, 3]);
     const D2B: [i32; 9] = [1, 2, 3, 1, 2, 3, 1, 2, 3];
+
+    let t3 = t1.add_broadcast(&t2).await.unwrap();
+
+    assert_eq!(
+        tensor_to_vec(&t3).await,
+        cpu_binary_elementwise(&D1I, &D2B, |a, b| a + b),
+    )
+}
+
+#[tokio::test]
+async fn it_broadcasts_increasing_dim() {
+    let gpu = gpu().await;
+
+    let t1 = Tensor::from_iter(&gpu, [3, 3], D1I);
+    let t2 = Tensor::from_iter(&gpu, [3], [1, 2, 3]);
+    const D2B: [i32; 9] = [1, 1, 1, 2, 2, 2, 3, 3, 3];
 
     let t3 = t1.add_broadcast(&t2).await.unwrap();
 

@@ -18,10 +18,8 @@ use crate::{
         binding::{
             KernelBindingBuilder,
             KernelBindingDeclaration,
-            KernelBindingReadWrite,
             KernelDeclaration,
             KernelParameterDeclaration,
-            KernelParameterType,
         },
         TaskPartition,
     },
@@ -48,68 +46,22 @@ impl<R: Element, A: Element, B: Element, C: Element> KernelSignature
 {
     const DECLARATION: KernelDeclaration = KernelDeclaration {
         bindings: &[
-            KernelBindingDeclaration {
-                name: "result",
-                ty: R::WGSL_TYPE,
-                read_write: KernelBindingReadWrite::ReadWrite,
-            },
-            KernelBindingDeclaration {
-                name: "operand_1",
-                ty: A::WGSL_TYPE,
-                read_write: KernelBindingReadWrite::ReadOnly,
-            },
-            KernelBindingDeclaration {
-                name: "operand_2",
-                ty: B::WGSL_TYPE,
-                read_write: KernelBindingReadWrite::ReadOnly,
-            },
-            KernelBindingDeclaration {
-                name: "operand_3",
-                ty: C::WGSL_TYPE,
-                read_write: KernelBindingReadWrite::ReadOnly,
-            },
+            KernelBindingDeclaration::read_write::<R>("result"),
+            KernelBindingDeclaration::read_only::<A>("operand_1"),
+            KernelBindingDeclaration::read_only::<B>("operand_2"),
+            KernelBindingDeclaration::read_only::<C>("operand_3"),
         ],
         parameters: &[
-            KernelParameterDeclaration {
-                name: "op_strides",
-                ty: KernelParameterType::Shaped,
-            },
-            KernelParameterDeclaration {
-                name: "op_shape",
-                ty: KernelParameterType::Shaped,
-            },
-            KernelParameterDeclaration {
-                name: "result_offset",
-                ty: KernelParameterType::Int,
-            },
-            KernelParameterDeclaration {
-                name: "result_strides",
-                ty: KernelParameterType::Shaped,
-            },
-            KernelParameterDeclaration {
-                name: "operand_1_offset",
-                ty: KernelParameterType::Int,
-            },
-            KernelParameterDeclaration {
-                name: "operand_1_strides",
-                ty: KernelParameterType::Shaped,
-            },
-            KernelParameterDeclaration {
-                name: "operand_2_offset",
-                ty: KernelParameterType::Int,
-            },
-            KernelParameterDeclaration {
-                name: "operand_2_strides",
-                ty: KernelParameterType::Shaped,
-            },
-            KernelParameterDeclaration {
-                name: "operand_3_offset",
-                ty: KernelParameterType::Int,
-            },
-            KernelParameterDeclaration {
-                name: "operand_3_strides",
-                ty: KernelParameterType::Shaped,
-            },
+            KernelParameterDeclaration::shaped("op_strides"),
+            KernelParameterDeclaration::shaped("op_shape"),
+            KernelParameterDeclaration::int("result_offset"),
+            KernelParameterDeclaration::shaped("result_strides"),
+            KernelParameterDeclaration::int("operand_1_offset"),
+            KernelParameterDeclaration::shaped("operand_1_strides"),
+            KernelParameterDeclaration::int("operand_2_offset"),
+            KernelParameterDeclaration::shaped("operand_2_strides"),
+            KernelParameterDeclaration::int("operand_3_offset"),
+            KernelParameterDeclaration::shaped("operand_3_strides"),
         ],
     };
 
@@ -156,7 +108,7 @@ impl<R: Element, A: Element, B: Element, C: Element> KernelSignature
 }
 
 impl<const D: usize, A: Element> Tensor<D, A> {
-    async fn ternary_op<
+    pub async fn map_ternary_elementwise<
         M: Map<Signature = TernarySignature<R, A, B, C>>,
         B: Element,
         C: Element,
@@ -212,7 +164,7 @@ macro_rules! ternary_tensor_impl {
                 $arg1_name: &Tensor<D, T>,
                 $arg2_name: &Tensor<D, T>,
             ) -> Result<Tensor<D, T>, KernelError> {
-                self.ternary_op::<$kernel<T>, _, _, _>($arg1_name, $arg2_name)
+                self.map_ternary_elementwise::<$kernel<T>, _, _, _>($arg1_name, $arg2_name)
                     .await
             }
         }
