@@ -167,7 +167,7 @@ impl<'gpu, 'tensor, const D: usize> KernelBindingBuilder<'gpu, 'tensor, D> {
             });
         }
 
-        if declaration.ty != ty {
+        if declaration.encoding.ty != ty {
             return Err(KernelBindingError::TypeMismatch {
                 index,
                 name,

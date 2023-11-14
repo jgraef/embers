@@ -1,9 +1,10 @@
+#![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 
 use color_eyre::eyre::Error;
 use wgpu_tensors::{
     gpu::Gpu,
-    tensor::Tensor,
+    tensor::{Tensor, view::TensorView},
 };
 
 #[tokio::main]
@@ -14,13 +15,13 @@ async fn main() -> Result<(), Error> {
 
     let gpu = Gpu::new().await?;
     let t1 = Tensor::from_iter(&gpu, [2, 2], [2, 3, 5, 7]);
-    //let t2 = Tensor::from_iter(&gpu, [1], [2]);
+    let t2 = Tensor::from_iter(&gpu, [1], [2]);
     //let t2 = Tensor::from_data(&gpu, [2, 2], &[2, 2, 2, 2]);
-    //let t3 = t1.add_broadcast(&t2).await?;
-    let t3 = t1.neg().await?;
+    let t3: Tensor<2, _> = t1.add_broadcast(&t2).await?;
+    //let t3 = t1.neg().await?;
     //let t3 = t1.sum(&[0]).await?;
 
-    let view = t3.view().await;
+    let view: TensorView<2, _> = t3.view().await;
     tracing::debug!("{:?}", view);
 
     Ok(())

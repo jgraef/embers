@@ -1,5 +1,4 @@
 pub mod binding;
-pub mod cast;
 pub mod executor;
 pub mod fold;
 pub mod map;
@@ -127,7 +126,7 @@ impl TaskPartition {
                     z: 1,
                 },
                 workgroup_count: Vec3 { x: 1, y: 1, z: 1 },
-                chunk_size: 1,
+                chunk_size: chunk_size as u32,
             }
         }
         else {

@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use half::f16;
 
-use super::map::{
+use super::{
     unary::UnarySignature,
     Map,
 };

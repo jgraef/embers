@@ -9,11 +9,11 @@ use common::{
 use pretty_assertions::assert_eq;
 use wgpu_tensors::Tensor;
 
-fn cpu_unary_elementwise<T: Copy>(d: &[T], f: impl FnMut(T) -> T) -> Vec<T> {
+fn cpu_unary_elementwise<T: Copy, R>(d: &[T], f: impl FnMut(T) -> R) -> Vec<R> {
     d.into_iter().copied().map(f).collect()
 }
 
-fn cpu_binary_elementwise<T: Copy>(d1: &[T], d2: &[T], mut f: impl FnMut(T, T) -> T) -> Vec<T> {
+fn cpu_binary_elementwise<T: Copy, R>(d1: &[T], d2: &[T], mut f: impl FnMut(T, T) -> R) -> Vec<R> {
     d1.into_iter().zip(d2).map(|(&a, &b)| f(a, b)).collect()
 }
 
@@ -75,6 +75,15 @@ test_binary_elementwise!(it_subtracts_elementwise, sub, |a, b| a - b);
 test_binary_elementwise!(it_multiplies_elementwise, mul, |a, b| a * b);
 test_binary_elementwise!(it_divides_elementwise, div, |a, b| a / b);
 test_binary_elementwise!(it_modulos_elementwise, modulo, |a, b| a % b);
+
+
+test_binary_elementwise!(elementwise_eq, equal, |a, b| a == b);
+test_binary_elementwise!(elementwise_ne, not_equal, |a, b| a != b);
+test_binary_elementwise!(elementwise_lt, less_than, |a, b| a < b);
+test_binary_elementwise!(elementwise_le, less_than_or_equal, |a, b| a <= b);
+test_binary_elementwise!(elementwise_gt, greater_than, |a, b| a > b);
+test_binary_elementwise!(elementwise_ge, greater_than_or_equal, |a, b| a >= b);
+
 
 #[tokio::test]
 async fn it_broadcasts_with_same_dim() {

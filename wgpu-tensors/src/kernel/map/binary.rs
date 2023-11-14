@@ -172,7 +172,7 @@ macro_rules! binary_func_kernel {
 }
 
 macro_rules! binary_infix_kernel {
-    ($kernel:ident, $op:tt) => {
+    ($kernel:ident, $op:tt, $return_type:ident) => {
         pub struct $kernel<T>(PhantomData<T>);
 
         impl<T: Element + Number> Map for $kernel<T> {
@@ -182,18 +182,18 @@ macro_rules! binary_infix_kernel {
                 stringify!($op),
                 " value_operand_2;"
             );
-            type Signature = BinarySignature<T, T, T>;
+            type Signature = BinarySignature<$return_type, T, T>;
         }
     };
 }
 
 macro_rules! binary_tensor_impl {
-    ($kernel:ident, $tensor_func:ident) => {
+    ($kernel:ident, $tensor_func:ident, $return_type:ident) => {
         impl<const D: usize, T: Element + Number> Tensor<D, T> {
             pub async fn $tensor_func(
                 &self,
                 other: &Tensor<D, T>,
-            ) -> Result<Tensor<D, T>, KernelError>
+            ) -> Result<Tensor<D, $return_type>, KernelError>
             {
                 self.binary_elementwise::<$kernel<T>, _, _>(other)
                     .await
@@ -203,7 +203,7 @@ macro_rules! binary_tensor_impl {
                 pub async fn fn_name<const E: usize>(
                     &self,
                     other: &Tensor<E, T>,
-                ) -> Result<Tensor<{ max_rank(D, E) }, T>, KernelError>
+                ) -> Result<Tensor<{ max_rank(D, E) }, $return_type>, KernelError>
                 where
                     [(); max_rank(D, E)]:, // ???
                 {
@@ -218,7 +218,7 @@ macro_rules! binary_tensor_impl {
 macro_rules! binary_func {
     ($kernel:ident, $wsgl_func:ident, $tensor_func:ident) => {
         binary_func_kernel!($kernel, $wsgl_func);
-        binary_tensor_impl!($kernel, $tensor_func);
+        binary_tensor_impl!($kernel, $tensor_func, T);
     };
 
     ($kernel:ident, $func:ident) => {
@@ -227,10 +227,14 @@ macro_rules! binary_func {
 }
 
 macro_rules! binary_infix {
-    ($kernel:ident, $op:tt, $tensor_func:ident) => {
-        binary_infix_kernel!($kernel, $op);
-        binary_tensor_impl!($kernel, $tensor_func);
+    ($kernel:ident, $op:tt, $tensor_func:ident, $return_type:ident) => {
+        binary_infix_kernel!($kernel, $op, $return_type);
+        binary_tensor_impl!($kernel, $tensor_func, $return_type);
     };
+
+    ($kernel:ident, $op:tt, $tensor_func:ident) => {
+        binary_infix!($kernel, $op, $tensor_func, T);
+    }
 }
 
 binary_infix!(ElementwiseAddition, +, add);
@@ -243,3 +247,10 @@ binary_func!(ElementwisePower, pow);
 binary_func!(ElementwiseStep, step);
 binary_func!(ElementwiseMax, max, max_elementwise);
 binary_func!(ElementwiseMin, min, min_elementwise);
+
+binary_infix!(ElementwiseEqual, ==, equal, bool);
+binary_infix!(ElementwiseNotEqual, !=, not_equal, bool);
+binary_infix!(ElementwiseLessThan, <, less_than, bool);
+binary_infix!(ElementwiseLessThanOrEqual, <=, less_than_or_equal, bool);
+binary_infix!(ElementwiseGreaterThan, >, greater_than, bool);
+binary_infix!(ElementwiseGreaterThanOrEqual, >=, greater_than_or_equal, bool);

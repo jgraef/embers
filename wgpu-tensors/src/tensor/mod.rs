@@ -8,7 +8,7 @@ use std::mem::size_of;
 
 use derivative::Derivative;
 use itertools::Itertools;
-use wgpu::CommandEncoderDescriptor;
+use wgpu::{CommandEncoderDescriptor, util::align_to, COPY_BUFFER_ALIGNMENT};
 
 use self::{
     buffer::{
@@ -188,8 +188,8 @@ impl<const D: usize, T: Element> Tensor<D, T> {
 
         let source_offset = (self.strider.offset() * size_of::<T>()).try_into().unwrap();
         let copy_size = (self.strider.size() * size_of::<T>()).try_into().unwrap();
-
         assert!(copy_size <= destination.size());
+        let copy_size = align_to(copy_size, COPY_BUFFER_ALIGNMENT);
 
         let mut encoder = self
             .gpu
@@ -214,7 +214,7 @@ impl<const D: usize, T: Element> Tensor<D, T> {
 
         let view_buffer = TensorBuffer::allocate(
             &tensor.gpu,
-            tensor.strider.size() * size_of::<T>(),
+            tensor.strider.size(),
             TensorBufferUsage::CopyToHost,
             "Tensor::view",
         );

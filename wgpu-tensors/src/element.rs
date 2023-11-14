@@ -171,13 +171,13 @@ impl Encode for bool {
 
     const NUM_PACKED: usize = 32;
 
-    const WGSL_DECODE: &'static str = "let value = bool(encoded & (1 << i));";
+    const WGSL_DECODE: &'static str = "let value = bool(encoded & (1u << i));";
     const WGSL_ENCODE: &'static str = r#"
     if value {
-        *output |= (1 << i);
+        *output |= (1u << i);
     }
     else {
-        *output &= ~(1 << i);
+        *output &= ~(1u << i);
     }
     "#;
 
