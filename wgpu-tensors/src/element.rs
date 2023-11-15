@@ -54,7 +54,7 @@ impl WgslType for f16 {
 
 pub trait EncodeBuffer<T: Encode>: Default {
     fn write(&mut self, value: T) -> Option<T::Encoded>;
-    fn flush(self) -> Option<T::Encoded>;
+    fn flush(&mut self) -> Option<T::Encoded>;
 }
 
 /// Trait that defines how elements are encoded when written to or read from a
@@ -95,7 +95,7 @@ impl<T: Encode<Encoded = T>> EncodeBuffer<T> for Unbuffered {
         Some(value)
     }
 
-    fn flush(self) -> Option<<T as Encode>::Encoded> {
+    fn flush(&mut self) -> Option<<T as Encode>::Encoded> {
         None
     }
 }
@@ -140,12 +140,14 @@ impl EncodeBuffer<bool> for BoolBuffer {
             self.buf |= 1 << self.i;
         }
         else {
-            self.buf &= !(1 << self.i);
+            // buf is initialized as 0
+            //self.buf &= !(1 << self.i);
         }
 
         self.i += 1;
         if self.i == 32 {
             let value = self.buf;
+            self.i = 0;
             self.buf = 0;
             Some(value)
         }
@@ -154,9 +156,12 @@ impl EncodeBuffer<bool> for BoolBuffer {
         }
     }
 
-    fn flush(self) -> Option<<bool as Encode>::Encoded> {
+    fn flush(&mut self) -> Option<<bool as Encode>::Encoded> {
         if self.i > 0 {
-            Some(self.buf)
+            let value = self.buf;
+            self.i = 0;
+            self.buf = 0;
+            Some(value)
         }
         else {
             None

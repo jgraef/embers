@@ -17,7 +17,7 @@ var<storage, read> parameters: array<i32>;
 
     fn b_{{ binding.name }}_decode(index: i32) -> {{ binding.ty }} {
         let i = u32(index % B_{{ binding.name|upper }}_NUM_PACKED);
-        let encoded = b_{{ binding.name }}_read_encoded(index / B_{{ binding.name|upper }}_NUM_PACKED);
+        let encoded = b_{{ binding.name }}_read_encoded(index);
         {{ binding.encoding.decode }}
         return value;
     }

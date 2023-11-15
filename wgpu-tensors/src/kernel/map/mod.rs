@@ -13,9 +13,7 @@ use super::{
     KernelTemplateInfo,
 };
 
-pub struct MapKernel<M> {
-    _m: PhantomData<M>,
-}
+pub struct MapKernel<M>(PhantomData<M>);
 
 pub trait MapSignature: KernelSignature {
     const INPUTS: &'static [&'static str];
@@ -25,6 +23,8 @@ pub trait MapSignature: KernelSignature {
 pub trait Map: 'static {
     const LABEL: &'static str;
     const BODY: &'static str;
+    const INDEX_STEP: usize = 1;
+    const MAP_ENCODED: bool = false;
     type Signature: MapSignature;
 }
 
@@ -39,6 +39,8 @@ impl<M: Map> Kernel for MapKernel<M> {
             inputs: M::Signature::INPUTS,
             outputs: M::Signature::OUTPUTS,
             body: M::BODY,
+            index_step: M::INDEX_STEP,
+            map_encoded: M::MAP_ENCODED,
         }
     }
 }
@@ -50,4 +52,6 @@ pub struct MapKernelTemplate {
     inputs: &'static [&'static str],
     outputs: &'static [&'static str],
     body: &'static str,
+    index_step: usize,
+    map_encoded: bool,
 }

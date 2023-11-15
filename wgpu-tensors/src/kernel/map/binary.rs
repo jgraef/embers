@@ -10,6 +10,7 @@ use crate::{
     element::{
         Element,
         Number,
+        Encode,
     },
     error::{
         KernelError,
@@ -187,6 +188,49 @@ macro_rules! binary_infix_kernel {
     };
 }
 
+
+macro_rules! binary_bool {
+    ($kernel:ident, $op:tt, $tensor_func:ident) => {
+        pub enum $kernel {}
+
+        impl Map for $kernel {
+            const LABEL: &'static str = stringify!($kernel);
+            const BODY: &'static str = concat!(
+                "let value_result = value_operand_1 ",
+                stringify!($op),
+                " value_operand_2;"
+            );
+            type Signature = BinarySignature<bool, bool, bool>;
+            const INDEX_STEP: usize = <bool as Encode>::NUM_PACKED;
+            const MAP_ENCODED: bool = true;
+        }
+
+        impl<const D: usize> Tensor<D, bool> {
+            pub async fn $tensor_func(
+                &self,
+                other: &Tensor<D, bool>,
+            ) -> Result<Tensor<D, bool>, KernelError>
+            {
+                self.binary_elementwise::<$kernel, _, _>(other)
+                    .await
+            }
+
+            concat_idents!(fn_name = $tensor_func, _broadcast {
+                pub async fn fn_name<const E: usize>(
+                    &self,
+                    other: &Tensor<E, bool>,
+                ) -> Result<Tensor<{ max_rank(D, E) }, bool>, KernelError>
+                where
+                    [(); max_rank(D, E)]:, // ???
+                {
+                    self.binary_elementwise_broadcast::<E, $kernel, _, _>(other)
+                        .await
+                }
+            });
+        }
+    };
+}
+
 macro_rules! binary_tensor_impl {
     ($kernel:ident, $tensor_func:ident, $return_type:ident) => {
         impl<const D: usize, T: Element + Number> Tensor<D, T> {
@@ -237,6 +281,7 @@ macro_rules! binary_infix {
     }
 }
 
+
 binary_infix!(ElementwiseAddition, +, add);
 binary_infix!(ElementwiseSubtraction, -, sub);
 binary_infix!(ElementwiseMultiplication, *, mul);
@@ -254,3 +299,7 @@ binary_infix!(ElementwiseLessThan, <, less_than, bool);
 binary_infix!(ElementwiseLessThanOrEqual, <=, less_than_or_equal, bool);
 binary_infix!(ElementwiseGreaterThan, >, greater_than, bool);
 binary_infix!(ElementwiseGreaterThanOrEqual, >=, greater_than_or_equal, bool);
+
+binary_bool!(ElementwiseBoolOr, |, or);
+binary_bool!(ElementwiseBoolAnd, &, and);
+binary_bool!(ElementwiseBoolXor, ^, xor);

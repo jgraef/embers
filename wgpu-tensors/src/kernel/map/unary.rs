@@ -4,7 +4,7 @@ use super::{MapKernel, MapSignature};
 use crate::{
     element::{
         Element,
-        Number,
+        Number, Encode,
     },
     error::KernelError,
     kernel::{
@@ -120,6 +120,22 @@ impl<T: Element + Number> Map for ElementwiseNegate<T> {
 impl<const D: usize, T: Element + Number> Tensor<D, T> {
     pub async fn neg(&self) -> Result<Tensor<D, T>, KernelError> {
         self.map_unary_elementwise::<ElementwiseNegate<T>, T>()
+            .await
+    }
+}
+
+pub enum ElementwiseBoolNot {}
+impl Map for ElementwiseBoolNot {
+    const LABEL: &'static str = "ElementwiseBoolNot";
+    const BODY: &'static str = "let value_result = ~value_operand;";
+    type Signature = UnarySignature<bool, bool>;
+    const INDEX_STEP: usize = <bool as Encode>::NUM_PACKED;
+    const MAP_ENCODED: bool = true;
+}
+
+impl<const D: usize> Tensor<D, bool> {
+    pub async fn not(&self) -> Result<Tensor<D, bool>, KernelError> {
+        self.map_unary_elementwise::<ElementwiseBoolNot, bool>()
             .await
     }
 }

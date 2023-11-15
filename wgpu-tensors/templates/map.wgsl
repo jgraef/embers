@@ -10,9 +10,9 @@ fn main(
 ) {
     let index_range = index_range(global_id, num_workgroups);
 
-    for (var index = index_range.x; index < index_range.y; index++) {
+    for (var index = index_range.x; index < index_range.y; index += {{ index_step }}) {
 
-        // calculate the buffer indices for the tensors for the given global id
+        // read inputs
 
         {% for input in inputs %}
             let index_{{ input }} = p_{{ input }}_offset()
@@ -22,14 +22,19 @@ fn main(
                 P_OP_SHAPE,
                 P_{{ input|upper }}_STRIDES
             );
-            let value_{{ input }} = b_{{ input }}_decode(index_{{ input }});
+
+            {% if map_encoded %}
+                let value_{{ input }} = b_{{ input }}_read_encoded(index_{{ input }});
+            {% else %}
+                let value_{{ input }} = b_{{ input }}_decode(index_{{ input }});
+            {% endif %}
         {% endfor %}
 
         // perform the actual operation
 
         {{ body }}
 
-        // write output
+        // write outputs
 
         {% for output in outputs %}
             let index_{{ output }} = p_{{ output }}_offset()
@@ -39,7 +44,12 @@ fn main(
                 P_OP_SHAPE,
                 P_{{ output|upper }}_STRIDES
             );
-            b_{{ output }}_encode(index_{{ output }}, value_{{ output }});
+
+            {% if map_encoded %}
+                b_{{ output}}_write_encoded(index_{{ output }}, value_{{ output }});
+            {% else %}
+                b_{{ output }}_encode(index_{{ output }}, value_{{ output }});
+            {% endif %}
         {% endfor %}
     }
 }

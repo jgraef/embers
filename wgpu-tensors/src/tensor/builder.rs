@@ -118,7 +118,12 @@ impl<const D: usize, T: Element> TensorBuilder<D, T> {
         self.index += T::NUM_PACKED;
     }
 
-    pub fn build(self) -> Tensor<D, T> {
+    pub fn build(mut self) -> Tensor<D, T> {
+        if let Some(encoded) = self.encode_buffer.flush() {
+            let (offset, _) = T::buffer_index(self.index);
+            self.inner.with_view_mut(|view| view[offset] = encoded);
+        }
+
         if !self.is_full() {
             panic!("tensor builder hasn't been filled yet.")
         }
