@@ -21,10 +21,7 @@ use crate::{
         WgslType,
     },
     error::KernelError,
-    tensor::{
-        buffer::create_mapped_buffer,
-        strider::Strider,
-    },
+    tensor::buffer::create_mapped_buffer,
     Gpu,
     Tensor,
 };
@@ -63,29 +60,13 @@ impl<'gpu, 'tensor, const D: usize> KernelBindingBuilder<'gpu, 'tensor, D> {
         }
     }
 
-    pub fn add_parameter<'a>(
+    pub fn add_parameter<P: KernelParameter>(
         &mut self,
         name: &'static str,
-        value: impl Into<KernelParameter<D>>,
+        value: P,
     ) -> Result<(), KernelError> {
-        match value.into() {
-            KernelParameter::Int(value) => {
-                self.check_parameter(name, KernelParameterType::Int)?;
-                self.header.push(value);
-            }
-            KernelParameter::Shaped(value) => {
-                self.check_parameter(name, KernelParameterType::Shaped)?;
-                self.header.push(self.body.len() as i32);
-                self.body.extend(value.map(|x| x as i32));
-            }
-            KernelParameter::Strider(strider) => {
-                self.check_parameter(name, KernelParameterType::Strider)?;
-                self.header.push(self.body.len() as i32);
-                self.body.push(strider.offset() as i32);
-                self.body.extend(strider.shape().map(|x| x as i32));
-                self.body.extend(strider.strides().map(|x| x as i32));
-            }
-        }
+        self.check_parameter(name, P::TYPE)?;
+        value.add(&mut self.header, &mut self.body);
 
         self.parameter_index += 1;
 
@@ -287,42 +268,37 @@ pub enum KernelParameterError {
     },
 }
 
-#[derive(Clone, Debug)]
-pub enum KernelParameter<const D: usize> {
-    Int(i32),
-    Shaped([usize; D]),
-    Strider(Strider<D>),
+pub trait KernelParameter {
+    const TYPE: KernelParameterType;
+
+    fn add(&self, header: &mut Vec<i32>, body: &mut Vec<i32>);
 }
 
-impl<const D: usize> From<i32> for KernelParameter<D> {
-    fn from(value: i32) -> Self {
-        Self::Int(value)
-    }
+macro_rules! impl_kernel_parameter {
+    ($ty:ident) => {
+        impl KernelParameter for $ty {
+            const TYPE: KernelParameterType = KernelParameterType::Int;
+
+            fn add(&self, header: &mut Vec<i32>, _body: &mut Vec<i32>) {
+                header.push(*self as i32);
+            }
+        }
+
+        impl<const N: usize> KernelParameter for [$ty; N] {
+            const TYPE: KernelParameterType = KernelParameterType::Array;
+
+            fn add(&self, header: &mut Vec<i32>, body: &mut Vec<i32>) {
+                header.push(body.len() as i32);
+                body.extend(self.map(|x| x as i32));
+            }
+        }
+    };
 }
 
-impl<const D: usize> From<usize> for KernelParameter<D> {
-    fn from(value: usize) -> Self {
-        Self::Int(value.try_into().unwrap())
-    }
-}
-
-impl<const D: usize> From<[usize; D]> for KernelParameter<D> {
-    fn from(value: [usize; D]) -> Self {
-        Self::Shaped(value)
-    }
-}
-
-impl<'a, const D: usize> From<[isize; D]> for KernelParameter<D> {
-    fn from(value: [isize; D]) -> Self {
-        Self::Shaped(value.map(|x| x.try_into().unwrap()))
-    }
-}
-
-impl<const D: usize> From<Strider<D>> for KernelParameter<D> {
-    fn from(value: Strider<D>) -> Self {
-        Self::Strider(value)
-    }
-}
+impl_kernel_parameter!(i32);
+impl_kernel_parameter!(u32);
+impl_kernel_parameter!(isize);
+impl_kernel_parameter!(usize);
 
 #[derive(Clone, Copy, Debug)]
 pub struct KernelBindingDeclaration {
@@ -401,10 +377,10 @@ impl KernelParameterDeclaration {
         }
     }
 
-    pub const fn shaped(name: &'static str) -> Self {
+    pub const fn array(name: &'static str) -> Self {
         Self {
             name,
-            ty: KernelParameterType::Shaped,
+            ty: KernelParameterType::Array,
         }
     }
 }
@@ -412,6 +388,5 @@ impl KernelParameterDeclaration {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum KernelParameterType {
     Int,
-    Shaped,
-    Strider,
+    Array,
 }

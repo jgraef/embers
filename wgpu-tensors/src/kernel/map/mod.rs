@@ -1,7 +1,7 @@
 pub mod binary;
+pub mod cast;
 pub mod ternary;
 pub mod unary;
-pub mod cast;
 
 use std::marker::PhantomData;
 

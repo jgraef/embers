@@ -81,14 +81,12 @@ test_binary_elementwise!(it_modulos_elementwise, modulo, |a, b| a % b);
 test_binary_elementwise!(it_ors_elementwise, or, |a, b| a || b, D1B, D2B, [2, 2]);
 test_binary_elementwise!(it_ands_elementwise, and, |a, b| a && b, D1B, D2B, [2, 2]);
 
-
 test_binary_elementwise!(elementwise_eq, equal, |a, b| a == b);
 test_binary_elementwise!(elementwise_ne, not_equal, |a, b| a != b);
 test_binary_elementwise!(elementwise_lt, less_than, |a, b| a < b);
 test_binary_elementwise!(elementwise_le, less_than_or_equal, |a, b| a <= b);
 test_binary_elementwise!(elementwise_gt, greater_than, |a, b| a > b);
 test_binary_elementwise!(elementwise_ge, greater_than_or_equal, |a, b| a >= b);
-
 
 #[tokio::test]
 async fn it_broadcasts_with_same_dim() {

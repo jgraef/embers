@@ -1,10 +1,14 @@
 use std::marker::PhantomData;
 
-use super::{MapKernel, MapSignature};
+use super::{
+    MapKernel,
+    MapSignature,
+};
 use crate::{
     element::{
         Element,
-        Number, Encode,
+        Encode,
+        Number,
     },
     error::KernelError,
     kernel::{
@@ -39,12 +43,12 @@ impl<R: Element, A: Element> KernelSignature for UnarySignature<R, A> {
             KernelBindingDeclaration::read_only::<A>("operand"),
         ],
         parameters: &[
-            KernelParameterDeclaration::shaped("op_strides"),
-            KernelParameterDeclaration::shaped("op_shape"),
+            KernelParameterDeclaration::array("op_strides"),
+            KernelParameterDeclaration::array("op_shape"),
             KernelParameterDeclaration::int("result_offset"),
-            KernelParameterDeclaration::shaped("result_strides"),
+            KernelParameterDeclaration::array("result_strides"),
             KernelParameterDeclaration::int("operand_offset"),
-            KernelParameterDeclaration::shaped("operand_strides"),
+            KernelParameterDeclaration::array("operand_strides"),
         ],
     };
 

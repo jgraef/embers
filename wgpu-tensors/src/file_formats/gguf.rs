@@ -122,13 +122,15 @@ pub struct Gguf<R> {
     header: Header,
 }
 
-impl<R: AsyncReadExt + AsyncSeek + Unpin> Gguf<R> {
-    async fn open(mut reader: R) -> Result<Self, Error> {
+impl<R: AsyncReadExt + Unpin> Gguf<R> {
+    pub async fn open(mut reader: R) -> Result<Self, Error> {
         let header = Header::parse(&mut reader).await?;
 
         Ok(Self { reader, header })
     }
+}
 
+impl<R> Gguf<R> {
     pub fn version(&self) -> u32 {
         self.header.version
     }
@@ -140,7 +142,9 @@ impl<R: AsyncReadExt + AsyncSeek + Unpin> Gguf<R> {
     pub fn tensor_infos(&self) -> &BTreeMap<String, TensorInfo> {
         &self.header.tensor_infos
     }
+}
 
+impl<R: AsyncReadExt + AsyncSeek + Unpin> Gguf<R> {
     pub async fn load_tensor<const D: usize, T: Element + IsGgmlType>(
         &mut self,
         name: &str,

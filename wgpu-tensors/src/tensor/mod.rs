@@ -8,7 +8,11 @@ use std::mem::size_of;
 
 use derivative::Derivative;
 use itertools::Itertools;
-use wgpu::{CommandEncoderDescriptor, util::align_to, COPY_BUFFER_ALIGNMENT};
+use wgpu::{
+    util::align_to,
+    CommandEncoderDescriptor,
+    COPY_BUFFER_ALIGNMENT,
+};
 
 use self::{
     buffer::{

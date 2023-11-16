@@ -27,6 +27,8 @@ half = { version = "2.3", features = ["bytemuck"] }
 futures-lite = "2.0"
 byteorder = "1.5"
 num = "0.4"
+rand = "0.8"
+rand_xorshift = "0.3"
 
 [dev-dependencies]
 pretty_assertions = "1"

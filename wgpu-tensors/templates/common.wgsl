@@ -49,6 +49,8 @@ const WORKGROUP_SIZE_Y = {{ info.work_group_size.y }}u;
 const WORKGROUP_SIZE_Z = {{ info.work_group_size.z }}u;
 const WORKGROUP_SIZE = {{ info.work_group_size.product() }}u;
 
+const PI = 3.14159274;
+
 // parameters
 
 const P_COUNT = {{ info.declaration.parameters.len() }}u;
@@ -65,9 +67,9 @@ fn p_int(i: u32) -> i32 {
     return parameters[i + 2u];
 }
 
-fn p_shaped(i: u32, axis: u32) -> i32 {
+fn p_array(i: u32, j: u32) -> i32 {
     let p = u32(p_int(i)) + P_COUNT + 2u;
-    return parameters[u32(p) + axis];
+    return parameters[p + j];
 }
 
 {% for parameter in info.declaration.parameters %}
@@ -78,11 +80,10 @@ fn p_shaped(i: u32, axis: u32) -> i32 {
             fn p_{{ parameter.name }}() -> i32 {
                 return p_int({{ loop.index - 1 }}u);
             }
-        {% when crate::kernel::binding::KernelParameterType::Shaped %}
-            fn p_{{ parameter.name }}(axis: u32) -> i32 {
-                return p_shaped({{ loop.index - 1 }}u, axis);
+        {% when crate::kernel::binding::KernelParameterType::Array %}
+            fn p_{{ parameter.name }}(j: u32) -> i32 {
+                return p_array({{ loop.index - 1 }}u, j);
             }
-        {% when crate::kernel::binding::KernelParameterType::Strider %}
     {% endmatch %}
 {% endfor %}
 
@@ -92,9 +93,9 @@ fn p_shaped(i: u32, axis: u32) -> i32 {
 fn project(input: i32, p_stride_in: u32, p_shape: u32, p_stride_out: u32) -> i32 {
     var output = 0;
     for (var axis = 0u; axis < dim(); axis++) {
-        let stride_in = p_shaped(p_stride_in, axis);
+        let stride_in = p_array(p_stride_in, axis);
         if stride_in != 0 {
-            output += (input / stride_in) % p_shaped(p_shape, axis) * p_shaped(p_stride_out, axis);
+            output += (input / stride_in) % p_array(p_shape, axis) * p_array(p_stride_out, axis);
         }
     }
     return output;
@@ -103,7 +104,7 @@ fn project(input: i32, p_stride_in: u32, p_shape: u32, p_stride_out: u32) -> i32
 fn shape_size(p_shape: u32) -> i32 {
     var size = 1;
     for (var axis = 0u; axis < dim(); axis++) {
-        size *= p_shaped(p_shape, axis);
+        size *= p_array(p_shape, axis);
     }
     return size;
 }

@@ -3,7 +3,8 @@ use std::marker::PhantomData;
 use super::{
     KernelSignature,
     Map,
-    MapKernel, MapSignature,
+    MapKernel,
+    MapSignature,
 };
 use crate::{
     element::{
@@ -52,16 +53,16 @@ impl<R: Element, A: Element, B: Element, C: Element> KernelSignature
             KernelBindingDeclaration::read_only::<C>("operand_3"),
         ],
         parameters: &[
-            KernelParameterDeclaration::shaped("op_strides"),
-            KernelParameterDeclaration::shaped("op_shape"),
+            KernelParameterDeclaration::array("op_strides"),
+            KernelParameterDeclaration::array("op_shape"),
             KernelParameterDeclaration::int("result_offset"),
-            KernelParameterDeclaration::shaped("result_strides"),
+            KernelParameterDeclaration::array("result_strides"),
             KernelParameterDeclaration::int("operand_1_offset"),
-            KernelParameterDeclaration::shaped("operand_1_strides"),
+            KernelParameterDeclaration::array("operand_1_strides"),
             KernelParameterDeclaration::int("operand_2_offset"),
-            KernelParameterDeclaration::shaped("operand_2_strides"),
+            KernelParameterDeclaration::array("operand_2_strides"),
             KernelParameterDeclaration::int("operand_3_offset"),
-            KernelParameterDeclaration::shaped("operand_3_strides"),
+            KernelParameterDeclaration::array("operand_3_strides"),
         ],
     };
 

@@ -46,7 +46,7 @@ fn main(
             );
 
             {% if map_encoded %}
-                b_{{ output}}_write_encoded(index_{{ output }}, value_{{ output }});
+                b_{{ output }}_write_encoded(index_{{ output }}, value_{{ output }});
             {% else %}
                 b_{{ output }}_encode(index_{{ output }}, value_{{ output }});
             {% endif %}

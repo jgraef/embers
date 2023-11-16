@@ -2,6 +2,7 @@ pub mod binding;
 pub mod executor;
 pub mod fold;
 pub mod map;
+pub mod rand;
 
 use askama::Template;
 use wgpu::{

@@ -64,7 +64,8 @@ impl KernelExecutor {
         };
 
         // create bind group
-        let mut kernel_binding_builder = KernelBindingBuilder::new(gpu, K::Signature::DECLARATION, task_partition.chunk_size);
+        let mut kernel_binding_builder =
+            KernelBindingBuilder::new(gpu, K::Signature::DECLARATION, task_partition.chunk_size);
         <K::Signature as KernelSignature>::build_bind_group(args, &mut kernel_binding_builder)?;
         let bind_group_layout = compute_pipeline.get_bind_group_layout(0);
         let bind_group = kernel_binding_builder.build(&bind_group_layout);

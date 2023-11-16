@@ -4,7 +4,10 @@
 use color_eyre::eyre::Error;
 use wgpu_tensors::{
     gpu::Gpu,
-    tensor::{Tensor, view::TensorView},
+    tensor::{
+        view::TensorView,
+        Tensor,
+    },
 };
 
 #[tokio::main]

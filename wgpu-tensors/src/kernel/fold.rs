@@ -101,14 +101,14 @@ impl<R: Element, A: Element> KernelSignature for FoldSignature<R, A> {
             KernelBindingDeclaration::read_only::<A>("input"),
         ],
         parameters: &[
-            KernelParameterDeclaration::shaped("reduced_strides"),
-            KernelParameterDeclaration::shaped("reduced_shape"),
-            KernelParameterDeclaration::shaped("reducer_strides"),
-            KernelParameterDeclaration::shaped("reducer_shape"),
+            KernelParameterDeclaration::array("reduced_strides"),
+            KernelParameterDeclaration::array("reduced_shape"),
+            KernelParameterDeclaration::array("reducer_strides"),
+            KernelParameterDeclaration::array("reducer_shape"),
             KernelParameterDeclaration::int("result_offset"),
-            KernelParameterDeclaration::shaped("result_strides"),
+            KernelParameterDeclaration::array("result_strides"),
             KernelParameterDeclaration::int("input_offset"),
-            KernelParameterDeclaration::shaped("input_strides"),
+            KernelParameterDeclaration::array("input_strides"),
         ],
     };
 

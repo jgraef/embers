@@ -4,13 +4,14 @@ use concat_idents::concat_idents;
 
 use super::{
     Map,
-    MapKernel, MapSignature,
+    MapKernel,
+    MapSignature,
 };
 use crate::{
     element::{
         Element,
-        Number,
         Encode,
+        Number,
     },
     error::{
         KernelError,
@@ -50,14 +51,14 @@ impl<R: Element, A: Element, B: Element> KernelSignature for BinarySignature<R, 
             KernelBindingDeclaration::read_only::<B>("operand_2"),
         ],
         parameters: &[
-            KernelParameterDeclaration::shaped("op_strides"),
-            KernelParameterDeclaration::shaped("op_shape"),
+            KernelParameterDeclaration::array("op_strides"),
+            KernelParameterDeclaration::array("op_shape"),
             KernelParameterDeclaration::int("result_offset"),
-            KernelParameterDeclaration::shaped("result_strides"),
+            KernelParameterDeclaration::array("result_strides"),
             KernelParameterDeclaration::int("operand_1_offset"),
-            KernelParameterDeclaration::shaped("operand_1_strides"),
+            KernelParameterDeclaration::array("operand_1_strides"),
             KernelParameterDeclaration::int("operand_2_offset"),
-            KernelParameterDeclaration::shaped("operand_2_strides"),
+            KernelParameterDeclaration::array("operand_2_strides"),
         ],
     };
 
@@ -188,7 +189,6 @@ macro_rules! binary_infix_kernel {
     };
 }
 
-
 macro_rules! binary_bool {
     ($kernel:ident, $op:tt, $tensor_func:ident) => {
         pub enum $kernel {}
@@ -278,9 +278,8 @@ macro_rules! binary_infix {
 
     ($kernel:ident, $op:tt, $tensor_func:ident) => {
         binary_infix!($kernel, $op, $tensor_func, T);
-    }
+    };
 }
-
 
 binary_infix!(ElementwiseAddition, +, add);
 binary_infix!(ElementwiseSubtraction, -, sub);
