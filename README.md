@@ -8,8 +8,8 @@ A tensor crate using [wgpu][1].
 ## TODO
 
  - [x] PRNG using hybrid tausworthe/LCG ([2])
- - [_] use parallel prefix for reduce operations ([3])
- - [_] matrix multiplication
+ - [ ] use parallel prefix for reduce operations ([3])
+ - [ ] matrix multiplication
  - [x] GGUF loading and metadata serde integration
 
 
