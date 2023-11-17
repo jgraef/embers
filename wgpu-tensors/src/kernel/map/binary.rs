@@ -102,7 +102,7 @@ impl<R: Element, A: Element, B: Element> MapSignature for BinarySignature<R, A, 
 }
 
 impl<const D: usize, A: Element> Tensor<D, A> {
-    pub async fn binary_elementwise<
+    pub(crate) async fn binary_elementwise<
         K: Map<Signature = BinarySignature<R, A, B>>,
         B: Element,
         R: Element,
@@ -127,7 +127,7 @@ impl<const D: usize, A: Element> Tensor<D, A> {
         Ok(result)
     }
 
-    async fn binary_elementwise_broadcast<
+    pub(crate) async fn binary_elementwise_broadcast<
         const E: usize,
         M: Map<Signature = BinarySignature<R, A, B>>,
         B: Element,
@@ -159,7 +159,7 @@ pub fn broadcast_to_common_shape<const D: usize, const E: usize, T: Element, U: 
 
 macro_rules! binary_func_kernel {
     ($kernel:ident, $wsgl_func:ident) => {
-        pub struct $kernel<T>(PhantomData<T>);
+        struct $kernel<T>(PhantomData<T>);
 
         impl<T: Element + Number> Map for $kernel<T> {
             const LABEL: &'static str = stringify!($kernel);
@@ -175,7 +175,7 @@ macro_rules! binary_func_kernel {
 
 macro_rules! binary_infix_kernel {
     ($kernel:ident, $op:tt, $return_type:ident) => {
-        pub struct $kernel<T>(PhantomData<T>);
+        struct $kernel<T>(PhantomData<T>);
 
         impl<T: Element + Number> Map for $kernel<T> {
             const LABEL: &'static str = stringify!($kernel);
@@ -191,7 +191,7 @@ macro_rules! binary_infix_kernel {
 
 macro_rules! binary_bool {
     ($kernel:ident, $op:tt, $tensor_func:ident) => {
-        pub enum $kernel {}
+        enum $kernel {}
 
         impl Map for $kernel {
             const LABEL: &'static str = stringify!($kernel);

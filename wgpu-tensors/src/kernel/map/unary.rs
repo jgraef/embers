@@ -87,7 +87,11 @@ impl<R: Element, A: Element> MapSignature for UnarySignature<R, A> {
 }
 
 impl<const D: usize, T: Element> Tensor<D, T> {
-    pub async fn map_unary_elementwise<'a, M: Map<Signature = UnarySignature<R, T>>, R: Element>(
+    pub(crate) async fn map_unary_elementwise<
+        'a,
+        M: Map<Signature = UnarySignature<R, T>>,
+        R: Element,
+    >(
         &self,
     ) -> Result<Tensor<D, R>, KernelError> {
         let mut result = Tensor::allocate(&self.gpu, self.shape());
@@ -101,111 +105,99 @@ impl<const D: usize, T: Element> Tensor<D, T> {
     }
 }
 
-pub struct Identity<T>(PhantomData<T>);
-impl<T: Element> Map for Identity<T> {
-    const LABEL: &'static str = "Identity";
-    const BODY: &'static str = "let value_result = value_operand;";
-    type Signature = UnarySignature<T, T>;
-}
-
 impl<const D: usize, T: Element> Tensor<D, T> {
     pub async fn id(&self) -> Result<Tensor<D, T>, KernelError> {
+        struct Identity<T>(PhantomData<T>);
+        impl<T: Element> Map for Identity<T> {
+            const LABEL: &'static str = "id";
+            const BODY: &'static str = "let value_result = value_operand;";
+            type Signature = UnarySignature<T, T>;
+        }
+
         self.map_unary_elementwise::<Identity<T>, T>().await
     }
 }
 
-pub struct ElementwiseNegate<T>(PhantomData<T>);
-impl<T: Element + Number> Map for ElementwiseNegate<T> {
-    const LABEL: &'static str = "ElementwiseNegate";
-    const BODY: &'static str = "let value_result = -value_operand;";
-    type Signature = UnarySignature<T, T>;
-}
-
 impl<const D: usize, T: Element + Number> Tensor<D, T> {
     pub async fn neg(&self) -> Result<Tensor<D, T>, KernelError> {
+        struct ElementwiseNegate<T>(PhantomData<T>);
+        impl<T: Element + Number> Map for ElementwiseNegate<T> {
+            const LABEL: &'static str = "neg";
+            const BODY: &'static str = "let value_result = -value_operand;";
+            type Signature = UnarySignature<T, T>;
+        }
+
         self.map_unary_elementwise::<ElementwiseNegate<T>, T>()
             .await
     }
 }
 
-pub enum ElementwiseBoolNot {}
-impl Map for ElementwiseBoolNot {
-    const LABEL: &'static str = "ElementwiseBoolNot";
-    const BODY: &'static str = "let value_result = ~value_operand;";
-    type Signature = UnarySignature<bool, bool>;
-    const INDEX_STEP: usize = <bool as Encode>::NUM_PACKED;
-    const MAP_ENCODED: bool = true;
-}
-
 impl<const D: usize> Tensor<D, bool> {
     pub async fn not(&self) -> Result<Tensor<D, bool>, KernelError> {
+        struct ElementwiseBoolNot;
+        impl Map for ElementwiseBoolNot {
+            const LABEL: &'static str = "not";
+            const BODY: &'static str = "let value_result = ~value_operand;";
+            type Signature = UnarySignature<bool, bool>;
+            const INDEX_STEP: usize = <bool as Encode>::NUM_PACKED;
+            const MAP_ENCODED: bool = true;
+        }
         self.map_unary_elementwise::<ElementwiseBoolNot, bool>()
             .await
     }
 }
 
-macro_rules! unary_func_kernel {
-    ($kernel:ident, $wsgl_func:ident) => {
-        pub struct $kernel<T>(PhantomData<T>);
-
-        impl<T: Element + Number> Map for $kernel<T> {
-            const LABEL: &'static str = stringify!($kernel);
-            const BODY: &'static str = concat!(
-                "let value_result = ",
-                stringify!($wsgl_func),
-                "(value_operand);"
-            );
-            type Signature = UnarySignature<T, T>;
-        }
-    };
-}
-
-macro_rules! unary_tensor_impl {
-    ($kernel:ident, $tensor_func:ident) => {
+macro_rules! unary_func {
+    ($wgsl_func:ident, $tensor_func:ident) => {
         impl<const D: usize, T: Element + Number> Tensor<D, T> {
             pub async fn $tensor_func(&self) -> Result<Tensor<D, T>, KernelError> {
-                self.map_unary_elementwise::<$kernel<T>, T>().await
+                struct FuncKernel<T>(PhantomData<T>);
+
+                impl<T: Element + Number> Map for FuncKernel<T> {
+                    const LABEL: &'static str = stringify!($tensor_func);
+                    const BODY: &'static str = concat!(
+                        "let value_result = ",
+                        stringify!($wsgl_func),
+                        "(value_operand);"
+                    );
+                    type Signature = UnarySignature<T, T>;
+                }
+
+                self.map_unary_elementwise::<FuncKernel<T>, T>().await
             }
         }
     };
-}
-
-macro_rules! unary_func {
-    ($kernel:ident, $wsgl_func:ident, $tensor_func:ident) => {
-        unary_func_kernel!($kernel, $wsgl_func);
-        unary_tensor_impl!($kernel, $tensor_func);
-    };
-    ($kernel:ident, $func:ident) => {
-        unary_func!($kernel, $func, $func);
+    ($func:ident) => {
+        unary_func!($func, $func);
     };
 }
 
-unary_func!(ElementwiseDegrees, degrees);
-unary_func!(ElementwiseRadians, radians);
-unary_func!(ElementwiseCos, cos);
-unary_func!(ElementwiseCosh, cosh);
-unary_func!(ElementwiseAcos, acos);
-unary_func!(ElementwiseAcosh, acosh);
-unary_func!(ElementwiseSin, sin);
-unary_func!(ElementwiseSinh, sinh);
-unary_func!(ElementwiseAsin, asin);
-unary_func!(ElementwiseAsinh, asinh);
-unary_func!(ElementwiseTan, tan);
-unary_func!(ElementwiseTanh, tanh);
-unary_func!(ElementwiseAtan, atan);
-unary_func!(ElementwiseAtanh, atanh);
-unary_func!(ElementwiseAtan2, atan2);
-unary_func!(ElementwiseExp, exp);
-unary_func!(ElementwiseExp2, exp2);
-unary_func!(ElementwiseLog, log);
-unary_func!(ElementwiseLog2, log2);
-unary_func!(ElementwiseSqrt, sqrt);
-unary_func!(ElementwiseInverseSqrt, inverseSqrt, inverse_sqrt);
-unary_func!(ElementwiseAbsolute, abs);
-unary_func!(ElementwiseSignum, sign);
-unary_func!(ElementwiseFractional, fract);
-unary_func!(ElementwiseTruncate, trunc);
-unary_func!(ElementwiseCeil, ceil);
-unary_func!(ElementwiseFloor, floor);
-unary_func!(ElementwiseRound, round);
-unary_func!(ElementwiseSaturate, saturate);
+unary_func!(degrees);
+unary_func!(radians);
+unary_func!(cos);
+unary_func!(cosh);
+unary_func!(acos);
+unary_func!(acosh);
+unary_func!(sin);
+unary_func!(sinh);
+unary_func!(asin);
+unary_func!(asinh);
+unary_func!(tan);
+unary_func!(tanh);
+unary_func!(atan);
+unary_func!(atanh);
+unary_func!(atan2);
+unary_func!(exp);
+unary_func!(exp2);
+unary_func!(log);
+unary_func!(log2);
+unary_func!(sqrt);
+unary_func!(inverseSqrt, inverse_sqrt);
+unary_func!(abs);
+unary_func!(sign);
+unary_func!(fract);
+unary_func!(trunc);
+unary_func!(ceil);
+unary_func!(floor);
+unary_func!(round);
+unary_func!(saturate);

@@ -111,7 +111,7 @@ impl<R: Element, A: Element, B: Element, C: Element> MapSignature for TernarySig
 }
 
 impl<const D: usize, A: Element> Tensor<D, A> {
-    pub async fn map_ternary_elementwise<
+    pub(crate) async fn map_ternary_elementwise<
         M: Map<Signature = TernarySignature<R, A, B, C>>,
         B: Element,
         C: Element,
@@ -143,44 +143,33 @@ impl<const D: usize, A: Element> Tensor<D, A> {
     }
 }
 
-macro_rules! ternary_func_kernel {
-    ($kernel:ident, $wsgl_func:ident) => {
-        pub struct $kernel<T>(PhantomData<T>);
-
-        impl<T: Element + Number> Map for $kernel<T> {
-            const LABEL: &'static str = stringify!($kernel);
-            const BODY: &'static str = concat!(
-                "let value_result = ",
-                stringify!($wsgl_func),
-                "(value_operand_1, value_operand_2, value_operand_3);"
-            );
-            type Signature = TernarySignature<T, T, T, T>;
-        }
-    };
-}
-
-macro_rules! ternary_tensor_impl {
-    ($kernel:ident, $tensor_func:ident, $arg1_name:ident, $arg2_name:ident) => {
+macro_rules! ternary_func {
+    ($wsgl_func:ident, $tensor_func:ident, $arg1_name:ident, $arg2_name:ident) => {
         impl<const D: usize, T: Element + Number> Tensor<D, T> {
             pub async fn $tensor_func(
                 &self,
                 $arg1_name: &Tensor<D, T>,
                 $arg2_name: &Tensor<D, T>,
             ) -> Result<Tensor<D, T>, KernelError> {
-                self.map_ternary_elementwise::<$kernel<T>, _, _, _>($arg1_name, $arg2_name)
+                struct FuncKernel<T>(PhantomData<T>);
+
+                impl<T: Element + Number> Map for FuncKernel<T> {
+                    const LABEL: &'static str = stringify!($tensor_func);
+                    const BODY: &'static str = concat!(
+                        "let value_result = ",
+                        stringify!($wsgl_func),
+                        "(value_operand_1, value_operand_2, value_operand_3);"
+                    );
+                    type Signature = TernarySignature<T, T, T, T>;
+                }
+
+                self.map_ternary_elementwise::<FuncKernel<T>, _, _, _>($arg1_name, $arg2_name)
                     .await
             }
         }
     };
 }
 
-macro_rules! ternary_func {
-    ($kernel:ident, $wsgl_func:ident, $tensor_func:ident, $arg1_name:ident, $arg2_name:ident) => {
-        ternary_func_kernel!($kernel, $wsgl_func);
-        ternary_tensor_impl!($kernel, $tensor_func, $arg1_name, $arg2_name);
-    };
-}
-
-ternary_func!(ElementwiseFusedMultiplyAdd, fma, fused_multiply_add, e2, e3);
-ternary_func!(ElementwiseClamp, clamp, clamp, min, max);
-ternary_func!(ElementwiseMix, mix, mix, e2, e3);
+ternary_func!(fma, fused_multiply_add, e2, e3);
+ternary_func!(clamp, clamp, min, max);
+ternary_func!(mix, mix, e2, e3);

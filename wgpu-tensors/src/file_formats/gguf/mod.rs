@@ -1,3 +1,5 @@
+pub mod metadata;
+
 use std::{
     collections::BTreeMap,
     io::SeekFrom,
@@ -14,11 +16,16 @@ use futures_lite::{
     Future,
 };
 use half::f16;
+use int_enum::IntEnum;
 
 use super::ReadBytesAsyncExt;
 use crate::{
     element::Element,
     error::DimensionMismatch,
+    file_formats::gguf::metadata::{
+        Metadata,
+        MetadataValue,
+    },
     tensor::shape::Shape,
     Gpu,
     Tensor,
@@ -68,7 +75,8 @@ impl Parse for String {
     async fn parse<R: AsyncRead + Unpin>(mut reader: R) -> Result<Self, Error> {
         let len = reader.read_u64::<LittleEndian>().await?;
 
-        let mut buf = Vec::with_capacity(len as usize);
+        let mut buf = vec![];
+        buf.resize(len as usize, 0);
         reader.read_exact(&mut buf).await?;
 
         Ok(String::from_utf8(buf)?)
@@ -135,7 +143,7 @@ impl<R> Gguf<R> {
         self.header.version
     }
 
-    pub fn metadata(&self) -> &BTreeMap<String, MetadataValue> {
+    pub fn metadata(&self) -> &Metadata {
         &self.header.metadata_kv
     }
 
@@ -179,7 +187,7 @@ impl<R: AsyncReadExt + AsyncSeek + Unpin> Gguf<R> {
 
 pub struct Header {
     version: u32,
-    metadata_kv: BTreeMap<String, MetadataValue>,
+    metadata_kv: Metadata,
     tensor_infos: BTreeMap<String, TensorInfo>,
 }
 
@@ -195,27 +203,34 @@ impl Parse for Header {
         if &magic != Self::MAGIC {
             return Err(Error::InvalidMagic { found: magic });
         }
+        tracing::debug!(?magic);
 
         let version = reader.read_u32::<LittleEndian>().await?;
         if version != Self::VERSION {
             return Err(Error::IncompatibleVersion { found: version });
         }
+        tracing::debug!(?version);
 
         let tensor_count = reader.read_u64::<LittleEndian>().await?;
         let metadata_kv_count = reader.read_u64::<LittleEndian>().await?;
+        tracing::debug!(?tensor_count, metadata_kv_count);
 
         let mut metadata_kv = BTreeMap::new();
 
         for _ in 0..metadata_kv_count {
             let key = String::parse(&mut reader).await?;
             let value = MetadataValue::parse(&mut reader).await?;
+            tracing::debug!(key, ?value, "metadata");
             metadata_kv.insert(key, value);
         }
+
+        let metadata_kv = Metadata(metadata_kv);
 
         let mut tensor_infos = BTreeMap::new();
 
         for _ in 0..tensor_count {
             let tensor_info = TensorInfo::parse(&mut reader).await?;
+            tracing::debug!(?tensor_info, "tensor info");
             tensor_infos.insert(tensor_info.name.clone(), tensor_info);
         }
 
@@ -227,50 +242,8 @@ impl Parse for Header {
     }
 }
 
-#[derive(Clone, Debug)]
-pub enum MetadataValue {
-    U8(u8),
-    I8(i8),
-    U16(u16),
-    I16(i16),
-    U32(u32),
-    I32(i32),
-    Float32(f32),
-    U64(u64),
-    I64(i64),
-    Float64(f64),
-    Bool(bool),
-    String(String),
-    Array(Vec<MetadataValue>),
-}
-
-impl Parse for MetadataValue {
-    async fn parse<R: AsyncRead + Unpin>(mut reader: R) -> Result<Self, Error> {
-        let value_type = reader.read_u32::<LittleEndian>().await?;
-        let value = match value_type {
-            0 => MetadataValue::U8(reader.read_u8().await?),
-            1 => MetadataValue::I8(reader.read_i8().await?),
-            2 => MetadataValue::U16(reader.read_u16::<LittleEndian>().await?),
-            3 => MetadataValue::I16(reader.read_i16::<LittleEndian>().await?),
-            4 => MetadataValue::U32(reader.read_u32::<LittleEndian>().await?),
-            5 => MetadataValue::I32(reader.read_i32::<LittleEndian>().await?),
-            6 => MetadataValue::Float32(reader.read_f32::<LittleEndian>().await?),
-            7 => MetadataValue::Bool(bool::parse(&mut reader).await?),
-            8 => MetadataValue::String(String::parse(&mut reader).await?),
-            9 => {
-                // MetadataValue::Array(reader.read_u8().await?)
-                todo!();
-            }
-            10 => MetadataValue::U64(reader.read_u64::<LittleEndian>().await?),
-            11 => MetadataValue::I64(reader.read_i64::<LittleEndian>().await?),
-            12 => MetadataValue::Float64(reader.read_f64::<LittleEndian>().await?),
-            _ => return Err(Error::InvalidMetadataValueType { found: value_type }),
-        };
-        Ok(value)
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, IntEnum)]
+#[repr(u32)]
 pub enum GgmlType {
     F32 = 0,
     F16 = 1,
@@ -289,42 +262,21 @@ pub enum GgmlType {
     Q5K = 13,
     Q6K = 14,
     Q8K = 15,
-    I8,
-    I16,
-    I32,
-    Count,
+    I8 = 16,    // ?
+    I16 = 17,   // ?
+    I32 = 18,   // ?
+    Count = 19, // ?
 }
 
 impl Parse for GgmlType {
     async fn parse<R: AsyncRead + Unpin>(mut reader: R) -> Result<Self, Error> {
         let ty = reader.read_u32::<LittleEndian>().await?;
-
-        let ty = match ty {
-            0 => Self::F32,
-            1 => Self::F16,
-            2 => Self::Q4_0,
-            3 => Self::Q4_1,
-            6 => Self::Q5_0,
-            7 => Self::Q5_1,
-            8 => Self::Q8_0,
-            9 => Self::Q8_1,
-            10 => Self::Q2K,
-            11 => Self::Q3K,
-            12 => Self::Q4K,
-            13 => Self::Q5K,
-            14 => Self::Q6K,
-            15 => Self::Q8K,
-            16 => Self::I8,
-            17 => Self::I16,
-            18 => Self::I32,
-            19 => Self::Count,
-            _ => return Err(Error::InvalidGgmlType { found: ty }),
-        };
-
+        let ty = Self::try_from(ty).map_err(|_| Error::InvalidGgmlType { found: ty })?;
         Ok(ty)
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct TensorInfo {
     pub name: String,
     pub dimensions: Vec<u64>,

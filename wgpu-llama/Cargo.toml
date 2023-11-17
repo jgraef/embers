@@ -16,8 +16,11 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 dotenvy = "0.15"
 color-eyre = "0.6"
-tokio = { version = "1.33", features = ["rt-multi-thread", "macros", "io-util"] }
-thiserror = "1.0"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "fs"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+thiserror = "1"
+structopt = "0.3"
+serde = { version = "1", features = ["derive"] }
 
 [dependencies.wgpu-tensors]
 version = "0.1.0"

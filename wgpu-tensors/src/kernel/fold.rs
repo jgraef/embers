@@ -142,7 +142,7 @@ impl<R: Element, A: Element> KernelSignature for FoldSignature<R, A> {
 }
 
 impl<const D: usize, T: Element + Number> Tensor<D, T> {
-    pub async fn fold<F: Fold, R: Element>(
+    pub(crate) async fn fold<F: Fold, R: Element>(
         &self,
         axis: &[usize],
     ) -> Result<Tensor<D, R>, KernelError> {

@@ -1,14 +1,61 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 
+mod error;
+mod llama;
+mod tokenizer;
+
+use std::path::PathBuf;
+
 use color_eyre::eyre::Error;
-use wgpu_tensors::{
-    gpu::Gpu,
-    tensor::{
-        view::TensorView,
-        Tensor,
-    },
+use structopt::StructOpt;
+use tokio::{
+    fs::File,
+    io::BufReader,
 };
+use tokio_util::compat::TokioAsyncReadCompatExt;
+use wgpu_tensors::file_formats::gguf::{
+    metadata::MetadataValueType,
+    Gguf,
+};
+
+use crate::llama::Metadata;
+
+#[derive(Debug, StructOpt)]
+pub enum Args {
+    ShowGguf { path: PathBuf },
+}
+
+impl Args {
+    pub async fn run(self) -> Result<(), Error> {
+        match self {
+            Args::ShowGguf { path } => {
+                let reader = BufReader::new(File::open(&path).await?);
+                let gguf = Gguf::open(reader.compat()).await?;
+
+                let metadata = gguf.metadata();
+                let tensor_infos = gguf.tensor_infos();
+
+                println!("# Metadata: #{}", metadata.len());
+                for (key, value) in metadata.iter() {
+                    if value.ty() == MetadataValueType::Array {
+                        println!(" - `{key}`: [...]");
+                    }
+                    else {
+                        println!(" - `{key}`: `{value:?}`");
+                    }
+                }
+
+                println!("# Tensor Infos: #{}", tensor_infos.len());
+                for (key, tensor_info) in tensor_infos.iter() {
+                    println!(" - `{key}`: type={:?}, dimensions={:?}", tensor_info.ty, tensor_info.dimensions);
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -16,16 +63,8 @@ async fn main() -> Result<(), Error> {
     color_eyre::install()?;
     tracing_subscriber::fmt::init();
 
-    let gpu = Gpu::new().await?;
-    let t1 = Tensor::from_iter(&gpu, [2, 2], [2, 3, 5, 7]);
-    let t2 = Tensor::from_iter(&gpu, [1], [2]);
-    //let t2 = Tensor::from_data(&gpu, [2, 2], &[2, 2, 2, 2]);
-    let t3: Tensor<2, _> = t1.add_broadcast(&t2).await?;
-    //let t3 = t1.neg().await?;
-    //let t3 = t1.sum(&[0]).await?;
-
-    let view: TensorView<2, _> = t3.view().await;
-    tracing::debug!("{:?}", view);
+    let args = Args::from_args();
+    args.run().await?;
 
     Ok(())
 }

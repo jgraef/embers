@@ -8,7 +8,7 @@ pub mod gguf;
 macro_rules! byteorder_read {
     ($method:ident, $ty:ident, $num_bytes:expr) => {
         async fn $method<T: ByteOrder>(&mut self) -> Result<$ty, Error> {
-            let mut buf = [0; 1];
+            let mut buf = [0; $num_bytes];
             self.read_exact(&mut buf).await?;
             Ok(T::$method(&buf))
         }
