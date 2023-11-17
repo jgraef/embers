@@ -19,8 +19,6 @@ use wgpu_tensors::file_formats::gguf::{
     Gguf,
 };
 
-use crate::llama::Metadata;
-
 #[derive(Debug, StructOpt)]
 pub enum Args {
     ShowGguf { path: PathBuf },
@@ -48,7 +46,10 @@ impl Args {
 
                 println!("# Tensor Infos: #{}", tensor_infos.len());
                 for (key, tensor_info) in tensor_infos.iter() {
-                    println!(" - `{key}`: type={:?}, dimensions={:?}", tensor_info.ty, tensor_info.dimensions);
+                    println!(
+                        " - `{key}`: type={:?}, dimensions={:?}",
+                        tensor_info.ty, tensor_info.dimensions
+                    );
                 }
             }
         }

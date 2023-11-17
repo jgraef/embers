@@ -19,9 +19,12 @@ use super::{
 };
 use crate::{
     element::{
+        wgsl::{
+            WgslLiteral,
+            WgslType,
+        },
         Element,
         Number,
-        WgslType,
     },
     error::KernelError,
     tensor::strider::{
@@ -51,11 +54,11 @@ pub struct StateVariable {
 }
 
 impl StateVariable {
-    pub fn new<T: WgslType>(name: &'static str, init: T) -> Self {
+    pub fn new<T: WgslType + WgslLiteral>(name: &'static str, init: T) -> Self {
         Self {
             name: name.into(),
             ty: T::TYPE_NAME.into(),
-            init: init.wgsl_literal(),
+            init: init.format_literal(),
         }
     }
 }
@@ -170,7 +173,7 @@ macro_rules! fold_func_kernel {
     ($kernel:ident, $state:expr, $apply:expr, $epilog:expr) => {
         pub struct $kernel<T>(PhantomData<T>);
 
-        impl<T: Element + Number + WgslType> Fold for $kernel<T> {
+        impl<T: Element + Number + WgslType + WgslLiteral> Fold for $kernel<T> {
             const LABEL: &'static str = stringify!($kernel);
             const APPLY: &'static str = $apply;
             const EPILOG: &'static str = $epilog;
@@ -184,7 +187,7 @@ macro_rules! fold_func_kernel {
 
 macro_rules! fold_tensor_impl {
     ($kernel:ident, $tensor_func:ident) => {
-        impl<const D: usize, T: Element + Number + WgslType> Tensor<D, T> {
+        impl<const D: usize, T: Element + Number + WgslType + WgslLiteral> Tensor<D, T> {
             pub async fn $tensor_func(&self, axis: &[usize]) -> Result<Tensor<D, T>, KernelError> {
                 self.fold::<$kernel<T>, T>(axis).await
             }

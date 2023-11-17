@@ -9,8 +9,8 @@ use super::{
 };
 use crate::{
     element::{
+        block::Block,
         Element,
-        Encode,
         Number,
     },
     error::{
@@ -196,12 +196,12 @@ macro_rules! binary_bool {
         impl Map for $kernel {
             const LABEL: &'static str = stringify!($kernel);
             const BODY: &'static str = concat!(
-                "let value_result = value_operand_1 ",
+                "let value_result = packed_bool_t(value_operand_1.b ",
                 stringify!($op),
-                " value_operand_2;"
+                " value_operand_2.b);"
             );
             type Signature = BinarySignature<bool, bool, bool>;
-            const INDEX_STEP: usize = <bool as Encode>::NUM_PACKED;
+            const INDEX_STEP: usize = <bool as Element>::Block::NUM_PACKED;
             const MAP_ENCODED: bool = true;
         }
 

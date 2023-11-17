@@ -22,8 +22,8 @@ use super::{
 };
 use crate::{
     element::{
+        block::Block,
         Element,
-        Encode,
     },
     error::KernelError,
     tensor::strider::contiguous_strides,
@@ -105,7 +105,7 @@ impl Distribution<bool> for Standard {
         Ok(())
     }
 
-    const INDEX_STEP: usize = <bool as Encode>::NUM_PACKED;
+    const INDEX_STEP: usize = <bool as Element>::Block::NUM_PACKED;
 
     const SAMPLE_ENCODED: bool = true;
 }

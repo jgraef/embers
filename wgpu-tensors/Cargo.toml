@@ -31,6 +31,7 @@ rand = "0.8"
 rand_xorshift = "0.3"
 serde = { version = "1", features = ["derive"] }
 int-enum = { version = "0.5", features = ["convert", "serde"] }
+arrayvec = "0.7"
 
 [dev-dependencies]
 pretty_assertions = "1"

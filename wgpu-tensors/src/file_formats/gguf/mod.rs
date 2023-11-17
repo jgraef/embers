@@ -1,4 +1,5 @@
 pub mod metadata;
+pub mod quants;
 
 use std::{
     collections::BTreeMap,
@@ -39,7 +40,7 @@ pub enum Error {
     #[error("invalid magic: {found:?}")]
     InvalidMagic { found: [u8; 4] },
 
-    #[error("invalid magic: {found:?}")]
+    #[error("invalid version: {found:?}")]
     IncompatibleVersion { found: u32 },
 
     #[error("invalid utf8 encoding")]
@@ -113,15 +114,30 @@ macro_rules! impl_trivial_parse {
     };
 }
 
-impl_trivial_parse!(f32, read_f32, LittleEndian);
+impl_trivial_parse!(u8, read_u8);
+impl_trivial_parse!(u16, read_u16, LittleEndian);
+impl_trivial_parse!(u32, read_u32, LittleEndian);
+impl_trivial_parse!(u64, read_u64, LittleEndian);
 impl_trivial_parse!(i8, read_i8);
 impl_trivial_parse!(i16, read_i16, LittleEndian);
 impl_trivial_parse!(i32, read_i32, LittleEndian);
+impl_trivial_parse!(i64, read_i64, LittleEndian);
+impl_trivial_parse!(f32, read_f32, LittleEndian);
 
 impl Parse for f16 {
     async fn parse<R: AsyncRead + Unpin>(mut reader: R) -> Result<Self, Error> {
         let bits = reader.read_u16::<LittleEndian>().await?;
         Ok(f16::from_bits(bits))
+    }
+}
+
+impl<const N: usize, T: Parse + Copy + Default> Parse for [T; N] {
+    async fn parse<R: AsyncRead + Unpin>(mut reader: R) -> Result<Self, Error> {
+        let mut buf = [Default::default(); N];
+        for i in 0..N {
+            buf[i] = T::parse(&mut reader).await?;
+        }
+        Ok(buf)
     }
 }
 
@@ -153,11 +169,14 @@ impl<R> Gguf<R> {
 }
 
 impl<R: AsyncReadExt + AsyncSeek + Unpin> Gguf<R> {
-    pub async fn load_tensor<const D: usize, T: Element + IsGgmlType>(
+    pub async fn load_tensor<const D: usize, T: Element + GgmlElement>(
         &mut self,
         name: &str,
         gpu: &Gpu,
-    ) -> Result<Tensor<D, T>, Error> {
+    ) -> Result<Tensor<D, T>, Error>
+    where
+        <T as Element>::Block: Parse,
+    {
         let tensor_info = self.header.tensor_infos.get(name).ok_or_else(|| {
             Error::TensorNotFound {
                 name: name.to_owned(),
@@ -175,8 +194,8 @@ impl<R: AsyncReadExt + AsyncSeek + Unpin> Gguf<R> {
             .await?;
 
         for _ in 0..num_elements {
-            let element = T::parse(&mut self.reader).await?;
-            builder.write_element(element);
+            let block = <T as Element>::Block::parse(&mut self.reader).await?;
+            builder.write_block(block);
         }
 
         assert!(builder.is_full());
@@ -206,7 +225,7 @@ impl Parse for Header {
         tracing::debug!(?magic);
 
         let version = reader.read_u32::<LittleEndian>().await?;
-        if version != Self::VERSION {
+        if version > Self::VERSION {
             return Err(Error::IncompatibleVersion { found: version });
         }
         tracing::debug!(?version);
@@ -262,10 +281,9 @@ pub enum GgmlType {
     Q5K = 13,
     Q6K = 14,
     Q8K = 15,
-    I8 = 16,    // ?
-    I16 = 17,   // ?
-    I32 = 18,   // ?
-    Count = 19, // ?
+    I8 = 16,  // ?
+    I16 = 17, // ?
+    I32 = 18, // ?
 }
 
 impl Parse for GgmlType {
@@ -302,7 +320,7 @@ impl TensorInfo {
         }
     }
 
-    fn check_type<T: IsGgmlType>(&self) -> Result<(), Error> {
+    fn check_type<T: GgmlElement>(&self) -> Result<(), Error> {
         if T::GGML_TYPE == self.ty {
             Ok(())
         }
@@ -337,20 +355,20 @@ impl Parse for TensorInfo {
 // todo: we probably want to use a separate trait from `Parse`, so that we can
 // construct tensors from their encoded values, instead of parsing it into
 // the element type and then encoding it again.
-pub trait IsGgmlType: Parse {
+pub trait GgmlElement {
     const GGML_TYPE: GgmlType;
 }
 
-macro_rules! impl_is_ggml_type {
+macro_rules! impl_trivial_ggml_element {
     ($ty:ident, $ggml:ident) => {
-        impl IsGgmlType for $ty {
+        impl GgmlElement for $ty {
             const GGML_TYPE: GgmlType = GgmlType::$ggml;
         }
     };
 }
 
-impl_is_ggml_type!(f32, F32);
-impl_is_ggml_type!(f16, F16);
-impl_is_ggml_type!(i8, I8);
-impl_is_ggml_type!(i16, I16);
-impl_is_ggml_type!(i32, I32);
+impl_trivial_ggml_element!(f32, F32);
+impl_trivial_ggml_element!(f16, F16);
+impl_trivial_ggml_element!(i8, I8);
+impl_trivial_ggml_element!(i16, I16);
+impl_trivial_ggml_element!(i32, I32);

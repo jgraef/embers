@@ -16,9 +16,13 @@ use wgpu::{
 use super::BindingId;
 use crate::{
     element::{
+        block::Block,
+        wgsl::{
+            WgslDecodeFromBlock,
+            WgslEncodeIntoBlock,
+            WgslType,
+        },
         Element,
-        Encode,
-        WgslType,
     },
     error::KernelError,
     tensor::buffer::create_mapped_buffer,
@@ -128,7 +132,7 @@ impl<'gpu, 'tensor, const D: usize> KernelBindingBuilder<'gpu, 'tensor, D> {
     }
 
     fn check_binding<T: Element>(&self, name: &'static str) -> Result<(), KernelBindingError> {
-        let ty = T::Encoded::TYPE_NAME;
+        let ty = T::Block::TYPE_NAME;
 
         let index = self.binding_index;
 
@@ -309,19 +313,19 @@ pub struct KernelBindingDeclaration {
 }
 
 impl KernelBindingDeclaration {
-    pub const fn read_only<T: Encode>(name: &'static str) -> Self {
+    pub const fn read_only<T: Element>(name: &'static str) -> Self {
         Self {
             name,
-            ty: <<T as Encode>::Primitive as WgslType>::TYPE_NAME,
+            ty: T::Primitive::TYPE_NAME,
             read_write: KernelBindingReadWrite::ReadOnly,
             encoding: KernelBindingEncoding::new::<T>(),
         }
     }
 
-    pub const fn read_write<T: Encode>(name: &'static str) -> Self {
+    pub const fn read_write<T: Element>(name: &'static str) -> Self {
         Self {
             name,
-            ty: <<T as Encode>::Primitive as WgslType>::TYPE_NAME,
+            ty: T::Primitive::TYPE_NAME,
             read_write: KernelBindingReadWrite::ReadWrite,
             encoding: KernelBindingEncoding::new::<T>(),
         }
@@ -353,12 +357,12 @@ pub struct KernelBindingEncoding {
 }
 
 impl KernelBindingEncoding {
-    pub const fn new<T: Encode>() -> Self {
+    pub const fn new<T: Element>() -> Self {
         Self {
-            ty: <<T as Encode>::Encoded as WgslType>::TYPE_NAME,
-            num_packed: <T as Encode>::NUM_PACKED as u32,
-            decode: <T as Encode>::WGSL_DECODE,
-            encode: <T as Encode>::WGSL_ENCODE,
+            ty: <T::Block as WgslType>::TYPE_NAME,
+            num_packed: T::Block::NUM_PACKED as u32,
+            decode: <T::Primitive as WgslDecodeFromBlock<T::Block>>::DECODE,
+            encode: <T::Primitive as WgslEncodeIntoBlock<T::Block>>::ENCODE,
         }
     }
 }

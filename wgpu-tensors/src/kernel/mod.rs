@@ -18,8 +18,8 @@ use self::binding::{
 };
 use crate::{
     element::{
+        block::Block,
         Element,
-        Encode,
     },
     error::KernelError,
     gpu::Gpu,
@@ -114,8 +114,8 @@ impl TaskPartition {
     pub fn for_result<const D: usize, T: Element>(tensor: &Tensor<D, T>) -> Self {
         let limits = tensor.gpu.limits();
 
-        let output_size = <T as Encode>::encoded_size(tensor.size());
-        let chunk_size = <T as Encode>::NUM_PACKED;
+        let output_size = T::Block::encoded_size(tensor.size());
+        let chunk_size = T::Block::NUM_PACKED;
 
         let workgroup_size = output_size.div_ceil(chunk_size) as u32;
 

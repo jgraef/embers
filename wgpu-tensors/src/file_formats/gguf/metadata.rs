@@ -4,9 +4,9 @@ use std::{
         BTreeMap,
     },
     fmt::Display,
+    iter::Peekable,
     ops::Bound,
     pin::Pin,
-    iter::Peekable,
 };
 
 use byteorder::LittleEndian;
@@ -308,14 +308,18 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut MetadataDeserializer<'de> {
 
     fn deserialize_option<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
-        V: de::Visitor<'de> {
-        
-        let mut iter = self.metadata.0.range::<str, _>((
-            Bound::Included(self.prefix),
-            Bound::Unbounded,
-        ));
+        V: de::Visitor<'de>,
+    {
+        let mut iter = self
+            .metadata
+            .0
+            .range::<str, _>((Bound::Included(self.prefix), Bound::Unbounded));
 
-        if iter.next().map(|(key, _)| key.starts_with(self.prefix)).unwrap_or_default() {
+        if iter
+            .next()
+            .map(|(key, _)| key.starts_with(self.prefix))
+            .unwrap_or_default()
+        {
             visitor.visit_some(self)
         }
         else {
@@ -376,15 +380,19 @@ struct MetadataMap<'a, 'de> {
 
 impl<'a, 'de> MetadataMap<'a, 'de> {
     fn new(de: &'a MetadataDeserializer<'de>) -> Self {
-        let iter = de.metadata.0.range::<str, _>((
-            if de.prefix.is_empty() {
-                Bound::<&str>::Unbounded
-            }
-            else {
-                Bound::Excluded(de.prefix)
-            },
-            Bound::<&str>::Unbounded,
-        )).peekable();
+        let iter = de
+            .metadata
+            .0
+            .range::<str, _>((
+                if de.prefix.is_empty() {
+                    Bound::<&str>::Unbounded
+                }
+                else {
+                    Bound::Excluded(de.prefix)
+                },
+                Bound::<&str>::Unbounded,
+            ))
+            .peekable();
 
         Self {
             de,
@@ -400,7 +408,10 @@ impl<'a, 'de> MetadataMap<'a, 'de> {
 
     fn skip_prefix(&mut self, prefix: &str) {
         loop {
-            let Some((key, _)) = self.iter.peek() else { break; };
+            let Some((key, _)) = self.iter.peek()
+            else {
+                break;
+            };
             if key.starts_with(prefix) {
                 self.iter.next();
             }
@@ -436,7 +447,12 @@ impl<'a, 'de> de::MapAccess<'de> for MetadataMap<'a, 'de> {
 
             self.skip_prefix(nested_prefix);
 
-            (key, NextStructValue::Nested { prefix: nested_prefix })
+            (
+                key,
+                NextStructValue::Nested {
+                    prefix: nested_prefix,
+                },
+            )
         }
         else {
             let mut key_de = MetadataKeyDeserializer::new(key_stripped);

@@ -29,8 +29,11 @@ use self::{
 };
 use crate::{
     element::{
+        block::{
+            DecodeFromBlock,
+            EncodeIntoBlock,
+        },
         Element,
-        Encode,
         One,
         Zero,
     },
@@ -48,7 +51,7 @@ pub struct Tensor<const D: usize, T: Element> {
     pub(crate) gpu: Gpu,
 
     #[derivative(Debug = "ignore")]
-    pub(crate) buffer: TensorBuffer<<T as Encode>::Encoded>,
+    pub(crate) buffer: TensorBuffer<T::Block>,
 
     pub(crate) strider: Strider<D>,
 }
@@ -69,11 +72,7 @@ impl<const D: usize, T: Element> Tensor<D, T> {
         }
     }
 
-    pub(crate) fn new(
-        gpu: Gpu,
-        buffer: TensorBuffer<<T as Encode>::Encoded>,
-        strider: Strider<D>,
-    ) -> Self {
+    pub(crate) fn new(gpu: Gpu, buffer: TensorBuffer<T::Block>, strider: Strider<D>) -> Self {
         Self {
             gpu,
             buffer,
@@ -85,7 +84,10 @@ impl<const D: usize, T: Element> Tensor<D, T> {
         TensorBuilder::new(gpu, shape, "Tensor::builder")
     }
 
-    pub fn from_iter(gpu: &Gpu, shape: [usize; D], iter: impl IntoIterator<Item = T>) -> Self {
+    pub fn from_iter(gpu: &Gpu, shape: [usize; D], iter: impl IntoIterator<Item = T>) -> Self
+    where
+        T: EncodeIntoBlock<T::Block>,
+    {
         let mut builder = TensorBuilder::new(gpu, shape, "Tensor::from_iter");
         for x in iter {
             builder.write_element(x);
@@ -93,7 +95,10 @@ impl<const D: usize, T: Element> Tensor<D, T> {
         builder.build()
     }
 
-    pub fn from_closure(gpu: &Gpu, shape: [usize; D], mut f: impl FnMut([usize; D]) -> T) -> Self {
+    pub fn from_closure(gpu: &Gpu, shape: [usize; D], mut f: impl FnMut([usize; D]) -> T) -> Self
+    where
+        T: EncodeIntoBlock<T::Block>,
+    {
         let mut builder = TensorBuilder::new(gpu, shape, "Tensor::from_closure");
 
         while !builder.is_full() {
@@ -103,20 +108,23 @@ impl<const D: usize, T: Element> Tensor<D, T> {
         builder.build()
     }
 
-    pub fn repeat(gpu: &Gpu, shape: [usize; D], value: T) -> Self {
+    pub fn repeat(gpu: &Gpu, shape: [usize; D], value: T) -> Self
+    where
+        T: EncodeIntoBlock<T::Block>,
+    {
         Self::from_closure(gpu, shape, |_| value)
     }
 
     pub fn zeroes(gpu: &Gpu, shape: [usize; D]) -> Self
     where
-        T: Zero,
+        T: Zero + EncodeIntoBlock<T::Block>,
     {
         Self::repeat(gpu, shape, T::ZERO)
     }
 
     pub fn ones(gpu: &Gpu, shape: [usize; D]) -> Self
     where
-        T: One,
+        T: One + EncodeIntoBlock<T::Block>,
     {
         Self::repeat(gpu, shape, T::ONE)
     }
@@ -126,7 +134,10 @@ impl<const D: usize, T: Element> Tensor<D, T> {
         shape: [usize; D],
         value_on_diagonal: T,
         value_everywhere_else: T,
-    ) -> Self {
+    ) -> Self
+    where
+        T: EncodeIntoBlock<T::Block>,
+    {
         Self::from_closure(gpu, shape, |x| {
             x.iter()
                 .all_equal()
@@ -186,7 +197,7 @@ impl<const D: usize, T: Element> Tensor<D, T> {
         Some(self.with_strider(strider))
     }
 
-    async fn copy_to_buffer(&self, destination: &TensorBuffer<<T as Encode>::Encoded>) {
+    async fn copy_to_buffer(&self, destination: &TensorBuffer<T::Block>) {
         assert_eq!(destination.usage(), TensorBufferUsage::CopyToHost);
         assert!(self.strider.is_contiguous());
 
@@ -213,7 +224,10 @@ impl<const D: usize, T: Element> Tensor<D, T> {
         self.gpu.queue().submit([encoder.finish()]).await;
     }
 
-    pub async fn view(&self) -> TensorView<D, T> {
+    pub async fn view(&self) -> TensorView<D, T>
+    where
+        T: DecodeFromBlock<T::Block>,
+    {
         let tensor = self.as_contiguous().await;
 
         let view_buffer = TensorBuffer::allocate(
@@ -264,7 +278,7 @@ impl<const D: usize, T: Element> Tensor<D, T> {
     }
 }
 
-impl<T: Element + Zero + One> Tensor<2, T> {
+impl<T: Element + Zero + One + EncodeIntoBlock<T::Block>> Tensor<2, T> {
     pub fn eye(gpu: &Gpu, rows: usize, columns: usize) -> Self {
         let shape = [rows, columns];
 

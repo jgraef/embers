@@ -6,8 +6,8 @@ use super::{
 };
 use crate::{
     element::{
+        block::Block,
         Element,
-        Encode,
         Number,
     },
     error::KernelError,
@@ -137,9 +137,9 @@ impl<const D: usize> Tensor<D, bool> {
         struct ElementwiseBoolNot;
         impl Map for ElementwiseBoolNot {
             const LABEL: &'static str = "not";
-            const BODY: &'static str = "let value_result = ~value_operand;";
+            const BODY: &'static str = "let value_result = packed_bool_t(~value_operand.b);";
             type Signature = UnarySignature<bool, bool>;
-            const INDEX_STEP: usize = <bool as Encode>::NUM_PACKED;
+            const INDEX_STEP: usize = <bool as Element>::Block::NUM_PACKED;
             const MAP_ENCODED: bool = true;
         }
         self.map_unary_elementwise::<ElementwiseBoolNot, bool>()

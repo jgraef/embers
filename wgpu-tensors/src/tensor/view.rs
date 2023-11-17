@@ -15,8 +15,11 @@ use super::{
     },
 };
 use crate::element::{
+    block::{
+        Block,
+        DecodeFromBlock,
+    },
     Element,
-    Encode,
 };
 
 #[self_referencing]
@@ -27,14 +30,14 @@ struct TensorViewInner<T: Pod> {
     view: MappedTensorBufferView<'this, T>,
 }
 
-pub struct TensorView<const D: usize, T: Encode> {
-    inner: TensorViewInner<T::Encoded>,
+pub struct TensorView<const D: usize, T: Element> {
+    inner: TensorViewInner<T::Block>,
     strider: Strider<D>,
 }
 
-impl<const D: usize, T: Encode> TensorView<D, T> {
+impl<const D: usize, T: Element + DecodeFromBlock<T::Block>> TensorView<D, T> {
     pub(crate) async fn new(
-        mapped_buffer: MappedTensorBuffer<T::Encoded>,
+        mapped_buffer: MappedTensorBuffer<T::Block>,
         strider: Strider<D>,
     ) -> Result<Self, MapTensorBufferError> {
         assert!(strider.is_contiguous());
@@ -53,10 +56,10 @@ impl<const D: usize, T: Encode> TensorView<D, T> {
     }
 
     fn read(&self, index: usize) -> T {
-        let (offset, i) = T::buffer_index(index);
+        let (offset, i) = T::Block::buffer_index(index);
         let view = self.inner.borrow_view();
         let view = bytemuck::cast_slice(view);
-        T::read_from(&view[offset], i)
+        T::decode_from(&view[offset], i)
     }
 
     pub fn get(&self, index: impl TensorIndex<D>) -> T {
@@ -76,19 +79,21 @@ impl<const D: usize, T: Encode> TensorView<D, T> {
     }
 }
 
-impl<const D: usize, T: Element> Debug for TensorView<D, T> {
+impl<const D: usize, T: Element + DecodeFromBlock<T::Block>> Debug for TensorView<D, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_list().entries(self.iter()).finish()
     }
 }
 
-pub struct TensorViewIterator<'a, const D: usize, T: Encode> {
+pub struct TensorViewIterator<'a, const D: usize, T: Element> {
     view: &'a TensorView<D, T>,
     index: usize,
     num_elements: usize,
 }
 
-impl<'a, const D: usize, T: Encode> Iterator for TensorViewIterator<'a, D, T> {
+impl<'a, const D: usize, T: Element + DecodeFromBlock<T::Block>> Iterator
+    for TensorViewIterator<'a, D, T>
+{
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {

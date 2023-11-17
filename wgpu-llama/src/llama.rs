@@ -1,5 +1,8 @@
 use serde::Deserialize;
-use wgpu_tensors::file_formats::gguf::metadata::{General, Tokenizer};
+use wgpu_tensors::file_formats::gguf::metadata::{
+    General,
+    Tokenizer,
+};
 
 #[derive(Debug, Deserialize)]
 pub struct Metadata {

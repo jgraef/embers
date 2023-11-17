@@ -116,3 +116,12 @@ fn index_range(global_id: vec3<u32>, num_workgroups: vec3<u32>) -> vec2<i32> {
     let end_index = start_index + i32(p_chunk_size());
     return vec2<i32>(start_index, end_index);
 }
+
+
+// block types
+
+struct packed_bool_t { b: u32 }
+struct packed_i8_t { i: u32 }
+struct packed_u8_t { i: u32 }
+struct packed_i16_t { i: u32 }
+struct packed_u16_t { i: u32 }
