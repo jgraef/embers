@@ -1,6 +1,6 @@
 [workspace]
 members = [
-  "wgpu-tensors",
-  "wgpu-llama",
+  "embers",
+  "embers-llama",
 ]
 resolver = "2"

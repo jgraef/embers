@@ -5,7 +5,7 @@ use common::{
     tensor_to_vec,
 };
 use pretty_assertions::assert_eq;
-use wgpu_tensors::Tensor;
+use embers::Tensor;
 
 const D1I: [i32; 9] = [2, 3, 5, 7, 11, 13, 17, 19, 23];
 

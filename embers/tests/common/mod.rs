@@ -1,5 +1,5 @@
 use tokio::sync::OnceCell;
-use wgpu_tensors::{
+use embers::{
     element::{
         block::DecodeFromBlock,
         Element,

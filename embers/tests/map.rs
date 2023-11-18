@@ -7,7 +7,7 @@ use common::{
     tensor_to_vec,
 };
 use pretty_assertions::assert_eq;
-use wgpu_tensors::Tensor;
+use embers::Tensor;
 
 fn cpu_unary_elementwise<T: Copy, R>(d: &[T], f: impl FnMut(T) -> R) -> Vec<R> {
     d.into_iter().copied().map(f).collect()

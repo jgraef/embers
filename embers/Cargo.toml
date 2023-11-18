@@ -1,10 +1,10 @@
 [package]
-name = "wgpu-tensors"
+name = "embers"
 version = "0.1.0"
 edition = "2021"
 authors = ["Janosch Gräf <janosch.graef@gmail.com>"]
 description = "Tensors with wgpu"
-repository = "https://github.com/jgraef/wgpu-tensors"
+repository = "https://github.com/jgraef/embers"
 # todo: add this once it's on docs.rs
 # documentation = ""
 categories = ["science"]

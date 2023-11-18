@@ -14,7 +14,7 @@ use tokio::{
     io::BufReader,
 };
 use tokio_util::compat::TokioAsyncReadCompatExt;
-use wgpu_tensors::file_formats::gguf::{
+use embers::file_formats::gguf::{
     metadata::MetadataValueType,
     Gguf,
 };

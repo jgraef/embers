@@ -7,7 +7,7 @@ use common::{
     tensor_to_vec,
 };
 use pretty_assertions::assert_eq;
-use wgpu_tensors::kernel::rand::{
+use embers::kernel::rand::{
     Standard,
     Uniform,
 };

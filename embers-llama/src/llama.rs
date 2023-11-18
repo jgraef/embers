@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use wgpu_tensors::file_formats::gguf::metadata::{
+use embers::file_formats::gguf::metadata::{
     General,
     Tokenizer,
 };
