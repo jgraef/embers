@@ -7,7 +7,18 @@ use half::f16;
 
 use super::{
     Error,
+    GgmlElement,
+    GgmlType,
     Parse,
+};
+use crate::element::{
+    block::Block,
+    wgsl::{
+        WgslDecodeFromBlock,
+        WgslEncodeIntoBlock,
+        WgslType,
+    },
+    Element,
 };
 
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
@@ -93,6 +104,14 @@ impl Parse for BlockQ8_0 {
     }
 }
 
+impl Block for BlockQ8_0 {
+    const NUM_PACKED: usize = 32;
+}
+
+impl WgslType for BlockQ8_0 {
+    const TYPE_NAME: &'static str = "block_q8_0_t";
+}
+
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
 #[repr(C)]
 pub struct BlockQ8_1 {
@@ -110,50 +129,22 @@ impl Parse for BlockQ8_1 {
     }
 }
 
-/*
-pub struct Q8_0(pub f16);
+#[derive(Copy, Clone, Debug)]
+pub enum Q8_0 {}
 
-impl Encode for Q8_0 {
-    type Buffer = QuantBuffer<Self>;
-    type Encoded = BlockQ8_0;
+impl GgmlElement for Q8_0 {
+    const GGML_TYPE: GgmlType = GgmlType::Q8_0;
+}
+
+impl Element for Q8_0 {
+    type Block = BlockQ8_0;
     type Primitive = f16;
-
-    const NUM_PACKED: usize = 32;
-    const WGSL_DECODE: &'static str = "todo";
-    const WGSL_ENCODE: &'static str = "todo";
-
-    fn write_into(&self, destination: &mut Self::Encoded, i: usize) {
-        todo!()
-    }
-
-    fn read_from(source: &Self::Encoded, i: usize) -> Self {
-        todo!()
-    }
 }
 
-impl WgslType for BlockQ8_0 {
-    const TYPE_NAME: &'static str = "block_q8_0_t";
-
-    fn wgsl_literal(&self) -> Cow<'static, str> {
-        todo!()
-    }
+impl WgslDecodeFromBlock<BlockQ8_0> for f16 {
+    const DECODE: &'static str = "let value = encoded.d * f16(encoded.qs[i]);";
 }
 
-struct QuantBuffer<T: Encode>(ArrayVec<T, { T::NUM_PACKED }>) where [(); T::NUM_PACKED]:;
-
-impl<T> Default for QuantBuffer<T> {
-    fn default() -> Self {
-        Self(ArrayVec::new())
-    }
+impl WgslEncodeIntoBlock<BlockQ8_0> for f16 {
+    const ENCODE: &'static str = "todo";
 }
-
-impl<T: Encode> EncodeBuffer<T> for QuantBuffer<T> {
-    fn write(&mut self, value: T) -> Option<T::Encoded> {
-        todo!()
-    }
-
-    fn flush(&mut self) -> Option<T::Encoded> {
-        todo!()
-    }
-}
- */

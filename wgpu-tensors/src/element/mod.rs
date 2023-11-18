@@ -7,10 +7,7 @@ use std::fmt::Debug;
 use half::f16;
 
 use self::{
-    block::{
-        Block,
-        DecodeFromBlock,
-    },
+    block::Block,
     primitive::{
         PackedBool,
         PackedI16,
@@ -33,7 +30,7 @@ pub trait One {
     const ONE: Self;
 }
 
-pub trait Element: Copy + Debug + DecodeFromBlock<Self::Block> + 'static {
+pub trait Element: Copy + Debug + 'static {
     type Block: Block;
     type Primitive: WgslType + WgslDecodeFromBlock<Self::Block> + WgslEncodeIntoBlock<Self::Block>;
 }

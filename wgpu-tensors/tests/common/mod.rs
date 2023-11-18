@@ -1,6 +1,9 @@
 use tokio::sync::OnceCell;
 use wgpu_tensors::{
-    element::Element,
+    element::{
+        block::DecodeFromBlock,
+        Element,
+    },
     Gpu,
     Tensor,
 };
@@ -14,6 +17,8 @@ pub async fn gpu() -> Gpu {
     gpu.clone()
 }
 
-pub async fn tensor_to_vec<const D: usize, T: Element>(tensor: &Tensor<D, T>) -> Vec<T> {
+pub async fn tensor_to_vec<const D: usize, T: Element + DecodeFromBlock<T::Block>>(
+    tensor: &Tensor<D, T>,
+) -> Vec<T> {
     tensor.view().await.iter().collect()
 }

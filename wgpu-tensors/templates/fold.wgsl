@@ -1,6 +1,6 @@
 // reduce.wgsl: {{ info.label }}
 
-{% include "common.wgsl" %}
+{% include "include/common.wgsl" %}
 
 
 @compute
