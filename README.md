@@ -1,4 +1,4 @@
-# wgpu-tensors - Tensors with wgpu 🔥
+# 🔥 embers - Tensors with wgpu
 
 **Work In Progress**
 
