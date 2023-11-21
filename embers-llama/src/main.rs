@@ -8,16 +8,16 @@ mod tokenizer;
 use std::path::PathBuf;
 
 use color_eyre::eyre::Error;
+use embers::file_formats::gguf::{
+    metadata::MetadataValueType,
+    Gguf,
+};
 use structopt::StructOpt;
 use tokio::{
     fs::File,
     io::BufReader,
 };
 use tokio_util::compat::TokioAsyncReadCompatExt;
-use embers::file_formats::gguf::{
-    metadata::MetadataValueType,
-    Gguf,
-};
 
 #[derive(Debug, StructOpt)]
 pub enum Args {

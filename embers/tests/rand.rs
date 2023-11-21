@@ -6,11 +6,11 @@ use common::{
     gpu,
     tensor_to_vec,
 };
-use pretty_assertions::assert_eq;
 use embers::kernel::rand::{
     Standard,
     Uniform,
 };
+use pretty_assertions::assert_eq;
 
 const SEED1: [u8; 16] = [
     94, 209, 73, 91, 163, 98, 5, 49, 167, 178, 165, 194, 64, 115, 219, 166,

@@ -4,8 +4,8 @@ use common::{
     gpu,
     tensor_to_vec,
 };
-use pretty_assertions::assert_eq;
 use embers::Tensor;
+use pretty_assertions::assert_eq;
 
 const D1I: [i32; 9] = [2, 3, 5, 7, 11, 13, 17, 19, 23];
 

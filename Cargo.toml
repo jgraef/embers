@@ -2,5 +2,8 @@
 members = [
   "embers",
   "embers-llama",
+  "embers-ricsl",
+  "embers-ricsl-macros",
+  "naga-test",
 ]
 resolver = "2"

@@ -6,8 +6,8 @@ use common::{
     gpu,
     tensor_to_vec,
 };
-use pretty_assertions::assert_eq;
 use embers::Tensor;
+use pretty_assertions::assert_eq;
 
 const D2F: [f32; 9] = [1., 2., 3., 4., 5., 6., 7., 8., 9.];
 const D2I: [i32; 9] = [1, 2, 3, 4, 5, 6, 7, 8, 9];

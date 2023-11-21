@@ -1,4 +1,3 @@
-use tokio::sync::OnceCell;
 use embers::{
     element::{
         block::DecodeFromBlock,
@@ -7,6 +6,7 @@ use embers::{
     Gpu,
     Tensor,
 };
+use tokio::sync::OnceCell;
 
 static GPU: OnceCell<Gpu> = OnceCell::const_new();
 

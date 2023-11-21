@@ -1,8 +1,8 @@
-use serde::Deserialize;
 use embers::file_formats::gguf::metadata::{
     General,
     Tokenizer,
 };
+use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct Metadata {
