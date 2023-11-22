@@ -1,9 +1,9 @@
 #![allow(dead_code, unused_variables)]
+#![feature(arbitrary_self_types)]
 
-mod arena;
+pub mod arena;
 pub mod builder;
-pub mod ops;
-mod types;
+pub mod rstd;
 
 #[doc(hidden)]
 pub mod __private;
@@ -16,7 +16,7 @@ use crate::{
     },
 };
 
-pub trait RicslType: 'static {
+pub trait RicslType: Sized + 'static {
     const PHANTOM: bool = false;
     fn add_to_module(module_builder: &mut ModuleBuilder) -> Handle<Type>;
 }

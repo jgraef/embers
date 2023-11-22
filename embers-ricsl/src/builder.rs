@@ -2,12 +2,22 @@ use std::{
     any::TypeId,
     collections::HashMap,
     marker::PhantomData,
+    sync::Arc,
+    ops::Deref,
 };
 
 use naga::{
     Binding,
+    Block,
+    EntryPoint,
     Expression,
-    Span, Statement, Function, Block, FunctionResult,
+    Function,
+    FunctionArgument,
+    FunctionResult,
+    LocalVariable,
+    ShaderStage,
+    Span,
+    Statement,
 };
 
 use crate::{
@@ -34,22 +44,44 @@ enum TypeInner {
         this: Option<Handle<Type>>,
         inputs: Vec<FunctionArgument>,
         output: Handle<Type>,
-    }
+    },
 }
 
 #[derive(Debug)]
 pub struct Type {
-    name: String,
+    name: Option<String>,
     inner: TypeInner,
     type_id: TypeId,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct ModuleBuilder {
     types: Arena<Type>,
     by_type_id: HashMap<TypeId, Handle<Type>>,
     naga_types: naga::UniqueArena<naga::Type>,
+    unit_type: Handle<Type>,
     naga_functions: naga::Arena<naga::Function>,
+    entry_points: Vec<EntryPoint>,
+}
+
+impl Default for ModuleBuilder {
+    fn default() -> Self {
+        let mut types = Arena::default();
+        let unit_type = types.insert(Type {
+            name: Some("()".into()),
+            inner: TypeInner::Unit,
+            type_id: TypeId::of::<()>(),
+        });
+
+        Self {
+            types,
+            by_type_id: Default::default(),
+            naga_types: Default::default(),
+            unit_type,
+            naga_functions: Default::default(),
+            entry_points: vec![],
+        }
+    }
 }
 
 impl ModuleBuilder {
@@ -74,16 +106,12 @@ impl ModuleBuilder {
 
         let type_id = TypeId::of::<T>();
         let ty = Type {
-            name,
+            name: Some(name),
             inner: TypeInner::Instrinsic { naga: naga_type },
             type_id,
         };
 
         self.types.insert(ty)
-    }
-
-    pub fn add_function(&mut self, name: impl ToString) -> FunctionBuilder {
-        FunctionBuilder::new(self, name)
     }
 
     pub fn get_type_by_id_or_add_it<T: RicslType>(&mut self) -> Handle<Type> {
@@ -95,13 +123,28 @@ impl ModuleBuilder {
         }
     }
 
-    pub fn get_func_by_id_or_add_it<F: 'static, G: FunctionGenerator>(&mut self, f: &F, g: G) -> Handle<Type> {
+    pub fn get_func_by_id_or_add_it<F: 'static, G: FunctionGenerator>(
+        &mut self,
+        f: &F,
+        g: G,
+    ) -> Handle<Type> {
         if let Some(handle) = self.by_type_id.get(&TypeId::of::<F>()) {
             *handle
         }
         else {
-            g.generate(self)
+            let mut function_builder = FunctionBuilder::new::<F>(self);
+            g.generate(&mut function_builder);
+            function_builder.build()
         }
+    }
+
+    pub fn add_entrypoint<G: FunctionGenerator + 'static>(&mut self, g: G) {
+        struct Entrypoint<T: 'static>(PhantomData<T>);
+
+        let mut function_builder = FunctionBuilder::new::<Entrypoint<G>>(self);
+        g.generate(&mut function_builder);
+        let entry_point = function_builder.build_entrypoint();
+        self.entry_points.push(entry_point);
     }
 
     fn get_naga_type(&self, handle: Handle<Type>) -> Option<naga::Handle<naga::Type>> {
@@ -117,7 +160,7 @@ impl ModuleBuilder {
         let ty = self.types.get(handle).unwrap();
         match &ty.inner {
             TypeInner::Func { naga, .. } => Some(*naga),
-            _ => None
+            _ => None,
         }
     }
 
@@ -129,7 +172,7 @@ impl ModuleBuilder {
             global_variables: Default::default(),
             const_expressions: Default::default(),
             functions: self.naga_functions,
-            entry_points: Default::default(),
+            entry_points: self.entry_points,
         };
         Module { naga }
     }
@@ -197,7 +240,7 @@ impl<'a> StructBuilder<'a> {
         );
 
         let ty = Type {
-            name: self.name,
+            name: Some(self.name),
             inner: TypeInner::Struct {
                 fields: self.fields,
                 field_names: self.field_names,
@@ -220,29 +263,39 @@ pub struct FunctionBuilder<'a> {
     pub module_builder: &'a mut ModuleBuilder,
     this: Option<Handle<Type>>,
     name: Option<String>,
+    type_id: TypeId,
     inputs: Vec<FunctionArgument>,
-    output: Option<Handle<Type>>,
+    output: Handle<Type>,
     expressions: naga::Arena<Expression>,
     named_expressions: HashMap<String, naga::Handle<Expression>>,
     statements: Vec<Statement>,
 }
 
 impl<'a> FunctionBuilder<'a> {
-    pub fn new(module_builder: &'a mut ModuleBuilder, name: impl ToString) -> Self {
+    pub fn new<F: 'static>(module_builder: &'a mut ModuleBuilder) -> Self {
+        let output = module_builder.unit_type;
         Self {
             module_builder,
             this: None,
-            name: Some(name.to_string()),
+            name: None,
+            type_id: TypeId::of::<F>(),
             inputs: vec![],
-            output: None,
+            output,
             expressions: Default::default(),
             named_expressions: Default::default(),
             statements: vec![],
         }
     }
+
+    pub fn add_name(&mut self, name: impl ToString) {
+        self.name = Some(name.to_string());
+    }
+
     pub fn add_input_receiver(&mut self) {
+        // we need to check what kind of binding this is (self, &self, &mut self), and
+        // then decide what type/pointer to use
         assert_eq!(self.inputs.len(), 0);
-        self.inputs.push(FunctionArgument::Receiver);
+        todo!();
     }
 
     pub fn add_input_named<T: RicslType>(
@@ -250,34 +303,30 @@ impl<'a> FunctionBuilder<'a> {
         ident: impl ToString,
         is_mut: bool,
         binding: Option<Binding>,
-    ) -> ExpressionHandle<T> {
+    ) -> FnInputBinding<T> {
         let ty = self.module_builder.get_type_by_id_or_add_it::<T>();
-
-        let i = self.inputs.len() as u32;
-        let expr = self
-            .expressions
-            .append(Expression::FunctionArgument(i), Span::default());
-
-        self.inputs.push(FunctionArgument::Named {
-            ty,
-            binding,
-            ident: ident.to_string(),
-            is_mut,
-            expr,
-        });
-
-        ExpressionHandle::from_handle(expr)
+        if let Some(naga_ty) = self.module_builder.get_naga_type(ty) {
+            self.inputs.push(FunctionArgument {
+                ty: naga_ty,
+                name: Some(ident.to_string()),
+                binding,
+            });
+            let i = self.inputs.len();
+            FnInputBinding::new(i, is_mut)
+        }
+        else {
+            FnInputBinding::phantom(is_mut)
+        }
     }
 
-    pub fn add_input_wild<T: RicslType>(&mut self) {
+    pub fn add_input_wild<T: RicslType>(&mut self) -> FnInputBinding<T> {
         let ty = self.module_builder.get_type_by_id_or_add_it::<T>();
-
-        self.inputs.push(FunctionArgument::Wild { ty });
+        FnInputBinding::phantom(false)
     }
 
     pub fn add_output<T: RicslType>(&mut self) {
         let ty = self.module_builder.get_type_by_id_or_add_it::<T>();
-        self.output = Some(ty);
+        self.output = ty;
     }
 
     pub fn add_expression<T>(&mut self, expr: Expression) -> ExpressionHandle<T> {
@@ -289,30 +338,30 @@ impl<'a> FunctionBuilder<'a> {
         self.named_expressions.insert(name.to_string(), expr);
     }
 
-    pub fn add_call<F: 'static, G: FunctionGenerator<Return = R>, R: RicslType>(&mut self, f: &F, gen: G, args: Vec<naga::Handle<Expression>>) -> ExpressionHandle<R> {
-        let type_handle = self.module_builder.get_func_by_id_or_add_it(
-            f,
-            gen,
-        );
+    pub fn add_call<F: 'static, G: FunctionGenerator<Return = R>, R: RicslType>(
+        &mut self,
+        f: &F,
+        gen: G,
+        args: Vec<naga::Handle<Expression>>,
+    ) -> ExpressionHandle<R> {
+        let type_handle = self.module_builder.get_func_by_id_or_add_it(f, gen);
 
         //let fun_type = self.module_builder.types.get(type_handle).unwrap();
         let naga_fun = self.module_builder.get_naga_func(type_handle).unwrap();
-        
+
         let ret = if R::PHANTOM {
-            ExpressionHandle::<R>::phantom()
+            ExpressionHandle::<R>::from_phantom()
         }
         else {
             let expr = Expression::CallResult(naga_fun);
             self.add_expression::<R>(expr)
         };
-        
-        self.add_statement(
-            Statement::Call {
-                function: naga_fun,
-                arguments: args,
-                result: ret.handle(),
-            }
-        );
+
+        self.add_statement(Statement::Call {
+            function: naga_fun,
+            arguments: args,
+            result: ret.handle(),
+        });
 
         ret
     }
@@ -321,49 +370,60 @@ impl<'a> FunctionBuilder<'a> {
         self.statements.push(statement);
     }
 
-    pub fn build(self) -> Handle<Function> {
-        let arguments = vec![];
-        for arg in self.inputs {
-            match arg {
-                FunctionArgument::Receiver => {
-                    arguments.push(naga::FunctionArgument {
-                        name: Some("self".to_owned()),
-                        ty: self.module_builder.get_naga_type(self.this.unwrap()).unwrap(),
-                        binding: None,
-                    })
-                },
-                FunctionArgument::Named { ty, binding, ident, is_mut, expr } => {
-                    arguments.push(naga::FunctionArgument {
-                        name: Some(ident),
-                        ty: self.module_builder.get_naga_type(ty).unwrap(),
-                        binding,
-                    })
-                },
-                FunctionArgument::Wild { ty } => {},
-            }
-        }
+    fn build_naga(&mut self) -> naga::Function {
+        let result = self
+            .module_builder
+            .get_naga_type(self.output)
+            .map(|ty| FunctionResult { ty, binding: None });
 
-        let result = self.output.map(|handle| {
-            FunctionResult {
-                ty: self.module_builder.get_naga_type(handle).unwrap(),
-                binding: None,
-            }
-        });
-
-        let func = Function {
-            name: self.name,
-            arguments,
+        let naga_func = Function {
+            name: self.name.clone(),
+            arguments: std::mem::replace(&mut self.inputs, vec![]),
             result,
             local_variables: Default::default(),
-            expressions: self.expressions,
+            expressions: std::mem::replace(&mut self.expressions, Default::default()),
             named_expressions: Default::default(),
-            body: Block::from_vec(self.statements),
+            body: Block::from_vec(std::mem::replace(&mut self.statements, vec![])),
         };
 
-        self.module_builder.naga_functions.append(func, Default::default())
+        naga_func
+    }
+
+    pub fn build_entrypoint(mut self) -> EntryPoint {
+        let function = self.build_naga();
+        EntryPoint {
+            name: self.name.unwrap(),
+            stage: ShaderStage::Compute,
+            early_depth_test: None,
+            workgroup_size: [64, 1, 1],
+            function,
+        }
+    }
+
+    pub fn build(mut self) -> Handle<Type> {
+        let naga_func = self.build_naga();
+
+        let naga = self
+            .module_builder
+            .naga_functions
+            .append(naga_func, Default::default());
+
+        let handle = self.module_builder.types.insert(Type {
+            name: self.name,
+            inner: TypeInner::Func {
+                naga,
+                this: self.this,
+                inputs: self.inputs,
+                output: self.output,
+            },
+            type_id: self.type_id,
+        });
+
+        handle
     }
 }
 
+/*
 #[derive(Debug)]
 enum FunctionArgument {
     Receiver,
@@ -372,36 +432,68 @@ enum FunctionArgument {
         binding: Option<Binding>,
         ident: String,
         is_mut: bool,
-        expr: naga::Handle<Expression>,
     },
     Wild {
         ty: Handle<Type>,
     },
+} */
+
+pub trait FunctionGenerator {
+    type Return;
+
+    fn generate(&self, function_builder: &mut FunctionBuilder);
 }
 
+#[derive(Debug)]
+pub struct Module {
+    naga: naga::Module,
+}
+
+#[derive(Debug)]
 #[must_use]
-pub struct ExpressionHandle<T> {
-    handle: Option<naga::Handle<Expression>>,
-    _t: PhantomData<T>,
+pub enum ExpressionHandle<T> {
+    Handle {
+        handle: naga::Handle<Expression>,
+        _ty: PhantomData<T>,
+    },
+    Phantom {
+        _ty: PhantomData<T>,
+    },
+    Const {
+        value: Arc<T>,
+    },
 }
 
 impl<T> ExpressionHandle<T> {
     pub fn from_handle(handle: naga::Handle<Expression>) -> Self {
-        Self {
-            handle: Some(handle),
-            _t: PhantomData,
+        Self::Handle {
+            handle,
+            _ty: PhantomData,
         }
     }
 
-    pub fn phantom() -> Self {
-        Self {
-            handle: None,
-            _t: PhantomData
+    pub fn from_phantom() -> Self {
+        Self::Phantom { _ty: PhantomData }
+    }
+
+    pub fn from_constant(value: T) -> Self {
+        Self::Const {
+            value: Arc::new(value),
         }
     }
 
     pub fn handle(&self) -> Option<naga::Handle<Expression>> {
-        self.handle
+        match self {
+            ExpressionHandle::Handle { handle, _ty } => Some(*handle),
+            _ => None,
+        }
+    }
+
+    pub fn constant(&self) -> Option<&T> {
+        match self {
+            ExpressionHandle::Const { value } => Some(value),
+            _ => None,
+        }
     }
 }
 
@@ -411,32 +503,165 @@ impl<T: 'static> ExpressionHandle<T> {
     }
 }
 
-
-pub trait FunctionGenerator {
-    type Return;
-
-    fn generate(&self, module_builder: &mut ModuleBuilder) -> Handle<Type>;
-}
-
-
-pub struct Module {
-    naga: naga::Module,
-}
-
-
-
-
-#[derive(Debug, Default)]
-pub struct Scope<'a> {
-    parent: Option<&'a Scope<'a>>,
-    items: HashMap<String, ()>,
-}
-
-impl<'a> Scope<'a> {
-    pub fn sub(&'a self) -> Self {
-        Self {
-            parent: Some(self),
-            items: Default::default(),
+impl<T> Clone for ExpressionHandle<T> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Handle { handle, _ty } => {
+                Self::Handle {
+                    handle: *handle,
+                    _ty: PhantomData,
+                }
+            }
+            Self::Phantom { _ty } => Self::Phantom { _ty: PhantomData },
+            Self::Const { value } => {
+                Self::Const {
+                    value: value.clone(),
+                }
+            }
         }
+    }
+}
+
+pub trait IntoExpressionHandle<T> {
+    type Error;
+
+    fn into_expr(
+        self,
+        function_builder: &mut FunctionBuilder,
+    ) -> Result<ExpressionHandle<T>, Self::Error>;
+}
+
+pub struct FnInputBinding<T: Sized> {
+    index: Option<usize>,
+    is_mut: bool,
+    _ty: PhantomData<T>,
+}
+
+impl<T> FnInputBinding<T> {
+    pub fn new(index: usize, is_mut: bool) -> Self {
+        Self {
+            index: Some(index),
+            is_mut,
+            _ty: PhantomData,
+        }
+    }
+
+    pub fn phantom(is_mut: bool) -> Self {
+        Self {
+            index: None,
+            is_mut,
+            _ty: PhantomData,
+        }
+    }
+}
+
+impl<T> IntoExpressionHandle<T> for FnInputBinding<T> {
+    type Error = ();
+
+    fn into_expr(
+        self,
+        function_builder: &mut FunctionBuilder,
+    ) -> Result<ExpressionHandle<T>, Self::Error> {
+        let expr = if let Some(index) = self.index {
+            function_builder.add_expression(Expression::FunctionArgument(index as u32))
+        }
+        else {
+            ExpressionHandle::from_phantom()
+        };
+
+        Ok(expr)
+    }
+}
+
+impl<T> Deref for FnInputBinding<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        panic!("FnInputBinding<T> is not meant to be dereferenced");
+    }
+}
+
+pub struct LetBinding<T> {
+    value: Option<ExpressionHandle<T>>,
+}
+
+impl<T> LetBinding<T> {
+    pub fn unbound() -> Self {
+        Self { value: None }
+    }
+
+    pub fn from_expr(expr: ExpressionHandle<T>) -> Self {
+        Self { value: Some(expr) }
+    }
+}
+
+impl<T> IntoExpressionHandle<T> for LetBinding<T> {
+    type Error = LetUnboundError;
+
+    fn into_expr(
+        self,
+        _function_builder: &mut FunctionBuilder,
+    ) -> Result<ExpressionHandle<T>, Self::Error> {
+        self.value.ok_or(LetUnboundError)
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("let uninitialized")]
+pub struct LetUnboundError;
+
+pub struct Var<T> {
+    handle: Option<naga::Handle<LocalVariable>>,
+    _ty: PhantomData<T>,
+}
+
+impl<T> Var<T> {
+    pub fn new(handle: naga::Handle<LocalVariable>) -> Self {
+        Self {
+            handle: Some(handle),
+            _ty: PhantomData,
+        }
+    }
+}
+
+impl<T> IntoExpressionHandle<T> for Var<T> {
+    type Error = ();
+
+    fn into_expr(
+        self,
+        function_builder: &mut FunctionBuilder,
+    ) -> Result<ExpressionHandle<T>, Self::Error> {
+        let expr = if let Some(handle) = self.handle {
+            //let pointer_expr =
+            // function_builder.add_expression(Expression::LocalVariable(self.handle));
+            let pointer = function_builder
+                .expressions
+                .append(Expression::LocalVariable(handle), Default::default());
+            function_builder.add_expression::<T>(Expression::Load { pointer })
+        }
+        else {
+            ExpressionHandle::from_phantom()
+        };
+
+        Ok(expr)
+    }
+}
+
+pub struct FuncConst<F, A, G> {
+    pub f: F,
+    _ty: PhantomData<(A, G)>,
+}
+
+impl<F: Fn(A) -> G, A, G> IntoExpressionHandle<FuncConst<F, A, G>> for F {
+    type Error = ();
+
+    fn into_expr(
+        self,
+        function_builder: &mut FunctionBuilder,
+    ) -> Result<ExpressionHandle<FuncConst<F, A, G>>, Self::Error> {
+        Ok(ExpressionHandle::from_constant(FuncConst {
+            f: self,
+            _ty: PhantomData,
+        }))
     }
 }

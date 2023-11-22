@@ -1,9 +1,22 @@
-use std::{any::{TypeId, type_name}, cell::OnceCell, marker::PhantomData};
+mod scratch;
+
+use std::{
+    any::{
+        type_name,
+        TypeId,
+    },
+    cell::OnceCell,
+    marker::PhantomData,
+};
 
 use embers_ricsl::{
+    builder::{
+        FunctionBuilder,
+        FunctionGenerator,
+        ModuleBuilder,
+    },
     ricsl,
     RicslType,
-    builder::{ModuleBuilder, FunctionGenerator},
 };
 
 /*
@@ -43,31 +56,28 @@ struct Foo {
     x: u32,
 }
 
-
-#[ricsl(entrypoint)]
-fn foo(
-    #[ricsl(builtin(global_invocation_id))]
-    a: u32
-) {
-    1u32
-}
-
 #[ricsl]
 fn bar() -> u32 {
-    x
+    let x = 42u32;
+    let y = x;
 }
 
-
+#[ricsl(entrypoint)]
+fn foo(#[ricsl(builtin(global_invocation_id))] a: u32) {
+    let x = bar();
+}
 
 fn main() {
     /*let module = naga::front::wgsl::parse_str(r#"
-    fn foo(x: u32) -> u32 { return x; }
-    fn main() { foo(42); }
+    @compute
+    @workgroup_size(64, 1, 1)
+    fn main() {
+        var a: u32;
+        a = 2 * a;
+    }
     "#).unwrap();
     println!("{module:#?}");*/
 
-    let mut module_builder = ModuleBuilder::default();
-
-    let bar = bar();
-    bar.generate(&mut module_builder);
+    let module = foo();
+    println!("{module:#?}");
 }

@@ -9,9 +9,6 @@ edition = "2021"
 tracing = "0.1"
 thiserror = "1"
 naga = "0.14"
-serde = { version = "1", features = ["derive"] }
-bincode = "1"
-rand = "0.8"
 half = { version = "2.3", optional = true }
 
 [dependencies.embers-ricsl-macros]
