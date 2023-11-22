@@ -22,17 +22,20 @@ use syn::{
     ReturnType,
     Signature,
     Stmt,
-    UnOp,
-    Visibility,
+    UnOp, Visibility, ImplItemFn,
 };
 
 use crate::{
+    args::{
+        FnArgs,
+        StdFlag, ImplArgs,
+    },
     error::Error,
     utils::{
         ident_to_literal,
         NameGen,
         TokenBuffer,
-    }, args::{StdFlag, FnArgs},
+    },
 };
 
 #[derive(Debug, EnumString)]
@@ -181,6 +184,7 @@ impl EntrypointArgAttrs {
 }
 
 pub fn process_entrypoint(input: &ItemFn, args: &FnArgs) -> Result<TokenStream, Error> {
+    let private = args.private();
     let vis = &input.vis;
 
     let mut output = TokenBuffer::default();
@@ -199,7 +203,7 @@ pub fn process_entrypoint(input: &ItemFn, args: &FnArgs) -> Result<TokenStream, 
                 attrs.validate()?;
                 match &attrs.builtin {
                     Some(b) => {
-                        output.push(quote! { let _binding = Some(::embers_ricsl::__private::naga::Binding::BuiltIn(#b)); });
+                        output.push(quote! { let _binding = Some(#private::naga::Binding::BuiltIn(#b)); });
                     }
                     None => {
                         output.push(quote! { let _binding = None; });
@@ -241,23 +245,23 @@ pub fn process_entrypoint(input: &ItemFn, args: &FnArgs) -> Result<TokenStream, 
         }
     }
 
-    process_block_inner(&input.block, &mut output, &mut name_gen)?;
+    process_block_inner(&input.block, &mut output, &mut name_gen, args)?;
 
     let generated = quote! {
-        #vis fn #ident() -> ::embers_ricsl::__private::Module {
+        #vis fn #ident() -> #private::Module {
             struct Gen;
 
-            impl ::embers_ricsl::__private::FunctionGenerator for Gen {
+            impl #private::FunctionGenerator for Gen {
                 type Return = ();
 
-                fn generate(&self, _function_builder: &mut ::embers_ricsl::__private::FunctionBuilder) {
+                fn generate(&self, _function_builder: &mut #private::FunctionBuilder) {
                     _function_builder.add_name(#ident_literal);
 
                     #output
                 }
             }
 
-            let mut module_builder = ::embers_ricsl::__private::ModuleBuilder::default();
+            let mut module_builder = #private::ModuleBuilder::default();
             module_builder.add_entrypoint(Gen);
             module_builder.build()
         }
@@ -266,19 +270,28 @@ pub fn process_entrypoint(input: &ItemFn, args: &FnArgs) -> Result<TokenStream, 
     Ok(generated)
 }
 
-pub fn process_function(input: &ItemFn, args: &FnArgs) -> Result<TokenStream, Error> {
+pub fn process_bare_function(input: &ItemFn, args: &FnArgs) -> Result<TokenStream, Error> {
+    process_function(&input.vis, &input.sig, &input.block, args)
+}
+
+pub fn process_impl_function(input: &ImplItemFn, args: &ImplArgs) -> Result<TokenStream, Error> {
+    process_function(&input.vis, &input.sig, &input.block, args)
+}
+
+fn process_function<A: StdFlag>(vis: &Visibility, sig: &Signature, block: &Block, args: &A) -> Result<TokenStream, Error> {
+    let private = args.private();
+
     let mut output = TokenBuffer::default();
     let mut name_gen = NameGen::default();
 
-    let vis = &input.vis;
-    let ident = &input.sig.ident;
+    let ident = &sig.ident;
     let ident_literal = ident_to_literal(&ident);
 
     output.push(quote! {
         _function_builder.add_name(#ident_literal);
     });
 
-    for input in &input.sig.inputs {
+    for input in &sig.inputs {
         match input {
             FnArg::Receiver(_) => {
                 output.push(quote! { _function_builder.add_input_receiver(); });
@@ -310,42 +323,46 @@ pub fn process_function(input: &ItemFn, args: &FnArgs) -> Result<TokenStream, Er
         }
     }
 
-    let (sig, ret) = transform_signature_to_generator(&input.sig, args);
-
-    match &input.sig.output {
+    match &sig.output {
         ReturnType::Type(_, ty) => {
             output.push(quote! {
-                _function_builder.add_output::<#ty>();
+                _function_builder.add_output::<R>();
             });
         }
         _ => {}
     }
 
-    process_block_inner(&input.block, &mut output, &mut name_gen)?;
+    let (sig, ret) = transform_signature_to_generator(sig, args);
+
+    process_block_inner(block, &mut output, &mut name_gen, args)?;
 
     let generated = quote! {
         #vis #sig {
-            struct Gen;
+            struct Gen<R>(#private::PhantomData<R>);
 
-            impl ::embers_ricsl::__private::FunctionGenerator for Gen {
-                type Return = #ret;
+            impl<R: #private::RicslType> #private::FunctionGenerator for Gen<R> {
+                type Return = R;
 
-                fn generate(&self, _function_builder: &mut ::embers_ricsl::__private::FunctionBuilder) {
+                fn generate(&self, _function_builder: &mut #private::FunctionBuilder) {
                     #output
                 }
             }
 
-            Gen
+            Gen::<#ret>(#private::PhantomData)
         }
     };
 
     Ok(generated)
 }
 
-pub fn transform_signature_to_generator<A: StdFlag>(sig: &Signature, args: &A) -> (TokenStream, TokenStream) {
+pub fn transform_signature_to_generator<A: StdFlag>(
+    sig: &Signature,
+    args: &A,
+) -> (TokenStream, TokenStream) {
     let private = args.private();
     let mut has_receiver = false;
-    let mut args = vec![];
+    let mut args_first = None;
+    let mut args_tail = vec![];
 
     let ident = &sig.ident;
 
@@ -354,19 +371,27 @@ pub fn transform_signature_to_generator<A: StdFlag>(sig: &Signature, args: &A) -
             FnArg::Receiver(_) => {
                 assert!(!has_receiver);
                 has_receiver = true;
+                args_first = Some(quote! { self: #private::PhantomReceiver<Self> });
             }
             FnArg::Typed(pat_type) => {
-                args.push(quote! { #pat_type });
+                let ty = &pat_type.ty;
+                if !has_receiver && args_first.is_none() {
+                    args_first = Some(quote!{ _: #private::ExpressionHandle<#ty> });
+                }
+                else {
+                    args_tail.push(quote! { #private::ExpressionHandle<#ty> });
+                }
             }
         }
     }
 
-    let args = if has_receiver {
-        quote! { self: #private::FnInputBinding<Self>, _args: (#(#args),*) }
-    }
-    else {
-        quote! { _args: (#(#args),*) }
-    };
+    let args_first = args_first.unwrap_or_else(|| {
+        assert!(args_tail.is_empty());
+        assert!(!has_receiver);
+        quote!{ _: () }
+    });
+
+    let args = quote! { #args_first, _: (#(#args_tail),*) };
 
     let ret = match &sig.output {
         ReturnType::Default => quote! { () },
@@ -380,24 +405,36 @@ pub fn transform_signature_to_generator<A: StdFlag>(sig: &Signature, args: &A) -
     (sig, ret)
 }
 
-fn process_block_inner(
+fn process_block_inner<A: StdFlag>(
     input: &Block,
     output: &mut TokenBuffer,
     name_gen: &mut NameGen,
+    args: &A,
 ) -> Result<(), Error> {
     for stmt in &input.stmts {
-        process_stmt(stmt, output, name_gen)?
+        process_stmt(stmt, output, name_gen, args)?
     }
     Ok(())
 }
 
-fn process_stmt(
+fn process_stmt<A: StdFlag>(
     input: &Stmt,
     output: &mut TokenBuffer,
     name_gen: &mut NameGen,
+    args: &A
 ) -> Result<(), Error> {
+    let private = args.private();
+
     match input {
         Stmt::Local(local) => {
+            let rhs = if let Some(rhs) = &local.init {
+                assert!(rhs.diverge.is_none());
+                Some(process_expr(&rhs.expr, output, name_gen, args)?)
+            }
+            else {
+                None
+            };
+
             match &local.pat {
                 Pat::Ident(lhs) => {
                     assert!(lhs.by_ref.is_none());
@@ -409,24 +446,29 @@ fn process_stmt(
                         todo!("let mut")
                     }
                     else {
-                        if let Some(rhs) = &local.init {
-                            assert!(rhs.diverge.is_none());
-                            let out = process_expr(&rhs.expr, output, name_gen)?;
-                            output.push(quote! { let #ident = ::embers_ricsl::__private::LetBinding::from_expr(#out); });
+                        if let Some(rhs) = rhs {
+                            output.push(quote! { let #ident = #private::LetBinding::from_expr(#rhs); });
                         }
                         else {
-                            output.push(quote!{ let #ident = ::embers_ricsl::__private::LetBinding::unbound(); });
+                            output.push(quote!{ let #ident = #private::LetBinding::unbound(); });
                         }
+                    }
+                }
+                Pat::Wild(_) => {
+                    if let Some(rhs) = rhs {
+                        output.push(quote! { let _wild = #private::LetBinding::from_expr(#rhs); });
                     }
                 }
                 _ => panic!("unsupported"),
             }
         }
-        Stmt::Item(_) => todo!(),
+        Stmt::Item(_) => todo!("process_stmt -> Stmt::Item"),
         Stmt::Expr(expr, _) => {
-            let _ = process_expr(expr, output, name_gen)?;
+            let _ = process_expr(expr, output, name_gen, args)?;
         }
-        Stmt::Macro(_) => todo!(),
+        Stmt::Macro(macro_) => {
+            output.push(quote!{ #macro_ });
+        },
     }
 
     Ok(())
@@ -448,19 +490,22 @@ impl ToTokens for ExprOut {
     }
 }
 
-fn process_expr(
+fn process_expr<A: StdFlag>(
     input: &Expr,
     output: &mut TokenBuffer,
     name_gen: &mut NameGen,
+    args: &A
 ) -> Result<ExprOut, Error> {
+    let private = args.private();
+
     macro_rules! emit_lit {
         ($ty:ident, $variant:ident, $x:expr) => {{
             let var = name_gen.tmp_var("lit");
             let x = $x;
             output.push(quote! {
                 let #var = _function_builder.add_expression::<$ty>(
-                    ::embers_ricsl::__private::naga::Expression::Literal(
-                        ::embers_ricsl::__private::naga::Literal::$variant(#x)
+                    #private::naga::Expression::Literal(
+                        #private::naga::Literal::$variant(#x)
                     )
                 );
             });
@@ -469,37 +514,59 @@ fn process_expr(
     }
 
     macro_rules! emit_func_call {
-        ($func:expr, $args:expr) => {{
+        ($func_path:expr, $args:expr) => {{
             let out = name_gen.tmp_var("call");
-            let func = $func;
+            let func_path = $func_path;
             let args: Vec<ExprOut> = $args.into();
+            let (args_self, args_tail, args_handles) = if let Some(first) = args.get(0) {
+                (
+                    quote!{ #first.into() },
+                    &args[1..],
+                    quote!{ [#(#args.handle()),*].into_iter().flatten().collect() },
+                )
+            }
+            else {
+                (
+                    quote!{ () },
+                    &[] as &[ExprOut],
+                    quote!{ vec![] },
+                )
+            };
 
             output.push(quote! {
-                let _func = #func.constant().expect("not a function").f;
-                let _gen = _func((#(#args),*));
-                let #out = _function_builder.add_call(&_func, _gen, vec![#(#args),*]);
+                let _func = &#func_path;
+                let _gen = _func(#args_self, (#(#args_tail),*));
+                let #out = _function_builder.add_call(&_func, _gen, #args_handles);
             });
 
             ExprOut::from(out)
         }};
     }
-    macro_rules! emit_func_call2 {
-        ($func:path, $($args:expr),*) => {{
-            let func = quote!{ $path };
+    macro_rules! emit_func_call_std {
+        ($func_path:path, $($args:expr),*) => {{
             let args = vec![$($args),*];
-            emit_func_call!(func, args)
+            emit_func_call!(quote!{#private::rstd::$func_path}, args)
+        }};
+    }
+    macro_rules! emit_func_call_expr {
+        ($func_expr:expr, $args:expr) => {{
+            let func_expr = $func_expr;
+            output.push(quote! {
+                let _func = #func_expr.constant().expect("not a function").f;
+            });
+            emit_func_call!(quote!{ _func }, $args)
         }};
     }
 
     let expr_out = match input {
-        Expr::Assign(assign) => todo!(),
-        Expr::Binary(binary) => todo!(),
+        Expr::Assign(assign) => todo!("process_expr -> Expr::Assign"),
+        Expr::Binary(binary) => todo!("process_expr -> Expr::Binary"),
         Expr::Block(block) => {
             assert!(block.attrs.is_empty());
             assert!(block.label.is_none());
             let mut block_output = TokenBuffer::default();
             let var = name_gen.tmp_var("block");
-            process_block_inner(&block.block, &mut block_output, name_gen)?;
+            process_block_inner(&block.block, &mut block_output, name_gen, args)?;
             output.push(quote! {
                 let #var = {
                     #block_output
@@ -507,24 +574,24 @@ fn process_expr(
             });
             var.into()
         }
-        Expr::Break(brk) => todo!(),
+        Expr::Break(brk) => todo!("process_expr -> Expr::Break"),
         Expr::Call(call) => {
             let func = &call.func;
-            let func = process_expr(func, output, name_gen)?;
-            let mut args = vec![];
+            let func = process_expr(func, output, name_gen, args)?;
+            let mut func_args = vec![];
             for arg in &call.args {
-                let arg = process_expr(arg, output, name_gen)?;
-                args.push(arg);
+                let arg = process_expr(arg, output, name_gen, args)?;
+                func_args.push(arg);
             }
-            emit_func_call!(func, args)
+            emit_func_call_expr!(func, func_args)
         }
-        Expr::Cast(cast) => todo!(),
-        Expr::Closure(closure) => todo!(),
-        Expr::Continue(cont) => todo!(),
-        Expr::Field(field) => todo!(),
-        Expr::ForLoop(for_) => todo!(),
-        Expr::If(if_) => todo!(),
-        Expr::Index(index) => todo!(),
+        Expr::Cast(cast) => todo!("process_expr -> Expr::Cast"),
+        Expr::Closure(closure) => todo!("process_expr -> Expr::Closure"),
+        Expr::Continue(cont) => todo!("process_expr -> Expr::Continue"),
+        Expr::Field(field) => todo!("process_expr -> Expr::Field"),
+        Expr::ForLoop(for_) => todo!("process_expr -> Expr::ForLoop"),
+        Expr::If(if_) => todo!("process_expr -> Expr::If"),
+        Expr::Index(index) => todo!("process_expr -> Expr::Index"),
         Expr::Lit(lit) => {
             match &lit.lit {
                 syn::Lit::Int(x) => {
@@ -547,40 +614,40 @@ fn process_expr(
                 lit => panic!("unsupported: {lit:?}"),
             }
         }
-        Expr::Loop(loop_) => todo!(),
-        Expr::MethodCall(call) => todo!(),
+        Expr::Loop(loop_) => todo!("process_expr -> Expr::Loop"),
+        Expr::MethodCall(call) => todo!("process_expr -> Expr::MethodCall"),
         Expr::Paren(paren) => {
             assert!(paren.attrs.is_empty());
-            process_expr(&paren.expr, output, name_gen)?
+            process_expr(&paren.expr, output, name_gen, args)?
         }
         Expr::Path(path) => {
             let var = name_gen.tmp_var("path");
-            output.push(quote! { let #var = ::embers_ricsl::__private::IntoExpressionHandle::into_expr(#path, _function_builder).unwrap(); });
+            output.push(quote! { let #var = ::#private::IntoExpressionHandle::into_expr(#path, _function_builder).unwrap(); });
             var.into()
             //path.path.clone().into()
         }
-        Expr::Repeat(repeat) => todo!(),
-        Expr::Return(ret) => todo!(),
-        Expr::Struct(strct) => todo!(),
-        Expr::Try(try_) => todo!(),
-        Expr::Tuple(tuple) => todo!(),
+        Expr::Repeat(repeat) => todo!("process_expr -> Expr::Repeat"),
+        Expr::Return(ret) => todo!("process_expr -> Expr::Return"),
+        Expr::Struct(strct) => todo!("process_expr -> Expr::Struct"),
+        Expr::Try(try_) => todo!("process_expr -> Expr::Try"),
+        Expr::Tuple(tuple) => todo!("process_expr -> Expr::Tuple"),
         Expr::Unary(unary) => {
-            let arg = process_expr(&unary.expr, output, name_gen)?;
+            let arg = process_expr(&unary.expr, output, name_gen, args)?;
             let out = match &unary.op {
                 UnOp::Deref(_) => {
-                    emit_func_call2!(::embers_ricsl::__private::rstd::ops::Deref::deref, arg)
+                    emit_func_call_std!(ops::Deref::deref, arg)
                 }
                 UnOp::Not(_) => {
-                    emit_func_call2!(::embers_ricsl::__private::rstd::ops::Not::not, arg)
+                    emit_func_call_std!(ops::Not::not, arg)
                 }
                 UnOp::Neg(_) => {
-                    emit_func_call2!(::embers_ricsl::__private::rstd::ops::Neg::neg, arg)
+                    emit_func_call_std!(ops::Neg::neg, arg)
                 }
                 _ => todo!(),
             };
             out.into()
         }
-        Expr::While(while_) => todo!(),
+        Expr::While(while_) => todo!("process_expr -> Expr::While"),
         _ => panic!("unsupported: {input:?}"),
     };
 

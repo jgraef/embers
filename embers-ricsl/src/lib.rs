@@ -1,24 +1,19 @@
-#![allow(dead_code, unused_variables)]
+//#![allow(dead_code, unused_variables)]
 #![feature(arbitrary_self_types)]
 
-pub mod arena;
 pub mod builder;
 pub mod rstd;
 
 #[doc(hidden)]
 pub mod __private;
 
-use crate::{
-    arena::Handle,
-    builder::{
-        ModuleBuilder,
-        Type,
-    },
+use crate::builder::{
+    ModuleBuilder,
+    TypeHandle,
 };
 
-pub trait RicslType: Sized + 'static {
-    const PHANTOM: bool = false;
-    fn add_to_module(module_builder: &mut ModuleBuilder) -> Handle<Type>;
+pub trait RicslType: 'static {
+    fn add_to_module(module_builder: &mut ModuleBuilder) -> TypeHandle;
 }
 
 #[cfg(feature = "macros")]

@@ -1,20 +1,6 @@
 mod scratch;
 
-use std::{
-    any::{
-        type_name,
-        TypeId,
-    },
-    cell::OnceCell,
-    marker::PhantomData,
-};
-
 use embers_ricsl::{
-    builder::{
-        FunctionBuilder,
-        FunctionGenerator,
-        ModuleBuilder,
-    },
     ricsl,
     RicslType,
 };
@@ -57,13 +43,14 @@ struct Foo {
 }
 
 #[ricsl]
-fn bar() -> u32 {
-    let x = 42u32;
-    let y = x;
+fn bar() -> i32 {
+    let _ = -1i32;
+
+    //return 0u32;
 }
 
 #[ricsl(entrypoint)]
-fn foo(#[ricsl(builtin(global_invocation_id))] a: u32) {
+fn foo() {
     let x = bar();
 }
 

@@ -1,14 +1,16 @@
 #![allow(dead_code, unused_variables)]
 
+mod args;
 mod error;
 mod functions;
 mod structs;
 mod traits;
 mod utils;
-mod args;
 
 use darling::{
-    ast::NestedMeta, FromMeta,
+    ast::NestedMeta,
+    FromDeriveInput,
+    FromMeta,
 };
 use proc_macro::TokenStream;
 use proc_macro_error::proc_macro_error;
@@ -20,28 +22,48 @@ use syn::{
 };
 
 use crate::{
+    args::{
+        FnArgs,
+        TraitArgs,
+        ImplArgs,
+        StructArgs,
+    },
     functions::{
         process_entrypoint,
-        process_function,
+        process_bare_function,
     },
     structs::impl_ricsl_type_for_struct,
-    traits::process_trait,
-    args::{FnArgs, TraitArgs},
+    traits::{process_trait, process_impl},
 };
+
+#[derive(FromDeriveInput)]
+#[darling(attributes(ricsl), forward_attrs(allow, doc, cfg))]
+struct DeriveOpts {
+    ident: syn::Ident,
+    attrs: Vec<syn::Attribute>,
+    #[darling(default)]
+    args: StructArgs,
+}
 
 #[proc_macro_derive(RicslType)]
 pub fn derive_ricsl_type(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
+    let opts = match DeriveOpts::from_derive_input(&input) {
+        Ok(v) => v,
+        Err(e) => {
+            return TokenStream::from(darling::Error::from(e).write_errors());
+        }
+    };
+
     let output = match &input.data {
-        Data::Struct(s) => impl_ricsl_type_for_struct(&input.ident, s).unwrap(),
+        Data::Struct(s) => impl_ricsl_type_for_struct(&opts.ident, s, &opts.args).unwrap(),
         Data::Enum(_) => panic!("enum not supported"),
         Data::Union(_) => panic!("union not supported"),
     };
 
     output.into()
 }
-
 
 #[proc_macro_error]
 #[proc_macro_attribute]
@@ -67,7 +89,7 @@ pub fn ricsl(attrs: TokenStream, input: TokenStream) -> TokenStream {
                 process_entrypoint(&func, &args).unwrap()
             }
             else {
-                process_function(&func, &args).unwrap()
+                process_bare_function(&func, &args).unwrap()
             }
         }
         Item::Trait(trait_) => {
@@ -79,7 +101,17 @@ pub fn ricsl(attrs: TokenStream, input: TokenStream) -> TokenStream {
             };
 
             process_trait(&trait_, &args).unwrap()
-        },
+        }
+        Item::Impl(impl_) => {
+            let args = match ImplArgs::from_list(&attrs) {
+                Ok(v) => v,
+                Err(e) => {
+                    return TokenStream::from(e.write_errors());
+                }
+            };
+
+            process_impl(&impl_, &args).unwrap()
+        }
         _ => panic!("invalid use of #[ricsl] macro"),
     };
 
