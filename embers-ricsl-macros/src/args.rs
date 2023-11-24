@@ -28,7 +28,6 @@ pub struct ImplArgs {
     pub __std: bool,
 }
 
-
 pub trait StdFlag {
     fn is_std(&self) -> bool;
     fn private(&self) -> TokenStream {

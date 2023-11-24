@@ -14,7 +14,3 @@ half = { version = "2.3", optional = true }
 [dependencies.embers-ricsl-macros]
 version = "0.1.0"
 path = "../embers-ricsl-macros"
-optional = true
-
-[features]
-macros = ["dep:embers-ricsl-macros"]

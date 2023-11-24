@@ -1,8 +1,18 @@
 mod scratch;
 
+use color_eyre::eyre::Error;
 use embers_ricsl::{
     ricsl,
     RicslType,
+};
+use naga::Module;
+use owo_colors::{
+    AnsiColors,
+    OwoColorize,
+};
+use similar::{
+    ChangeTag,
+    TextDiff,
 };
 
 /*
@@ -37,34 +47,67 @@ use embers_ricsl::{
 
 */
 
+fn print_module(title: &str, module: &Module) {
+    println!("# {title}\n\n{module:#?}\n");
+}
+
+fn diff_modules(mut wgsl: Module, ricsl: Module) {
+    wgsl.const_expressions.clear();
+
+    let old = format!("{:#?}", wgsl);
+    let new = format!("{:#?}", ricsl);
+    let diff = TextDiff::from_lines(&old, &new);
+
+    for change in diff.iter_all_changes() {
+        let (prefix, color) = match change.tag() {
+            ChangeTag::Delete => ("wgsl ", AnsiColors::Red),
+            ChangeTag::Insert => ("ricsl", AnsiColors::Green),
+            ChangeTag::Equal => ("     ", AnsiColors::Default),
+        };
+        let line = format!("{prefix} {change}");
+        print!("{}", line.color(color));
+    }
+}
+
 #[derive(RicslType)]
 struct Foo {
     x: u32,
 }
 
-#[ricsl]
-fn bar() -> i32 {
-    let _ = -1i32;
-
-    //return 0u32;
-}
-
 #[ricsl(entrypoint)]
 fn foo() {
-    let x = bar();
+    let a = Foo { x: 42u32 };
+    let b: u32 = a.x + 1u32;
 }
 
-fn main() {
-    /*let module = naga::front::wgsl::parse_str(r#"
+fn main() -> Result<(), Error> {
+    dotenvy::dotenv().ok();
+    color_eyre::install()?;
+    tracing_subscriber::fmt::init();
+
+    let wgsl = r#"
+    struct Foo {
+        x: u32,
+    }
     @compute
     @workgroup_size(64, 1, 1)
-    fn main() {
-        var a: u32;
-        a = 2 * a;
+    fn foo() {
+        let a = Foo(42u);
+        let b = a.x + 1u;
+        //let c = *b;
     }
-    "#).unwrap();
-    println!("{module:#?}");*/
+    fn bar(a: i32, b: i32) -> i32 {
+        return a + b;
+    }
+    "#;
 
-    let module = foo();
-    println!("{module:#?}");
+    let wgsl = naga::front::wgsl::parse_str(wgsl)?;
+    //println!("{wgsl:#?}");
+
+    let ricsl = foo()?;
+    //print_module("ricsl", &module.naga);
+
+    diff_modules(wgsl, ricsl.naga);
+
+    Ok(())
 }

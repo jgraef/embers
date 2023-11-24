@@ -24,16 +24,19 @@ use syn::{
 use crate::{
     args::{
         FnArgs,
-        TraitArgs,
         ImplArgs,
         StructArgs,
+        TraitArgs,
     },
     functions::{
-        process_entrypoint,
         process_bare_function,
+        process_entrypoint,
     },
     structs::impl_ricsl_type_for_struct,
-    traits::{process_trait, process_impl},
+    traits::{
+        process_impl,
+        process_trait,
+    },
 };
 
 #[derive(FromDeriveInput)]
