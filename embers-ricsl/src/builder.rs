@@ -22,6 +22,7 @@ use naga::{
     Handle,
     LocalVariable,
     ShaderStage,
+    Span,
     Statement,
     StructMember,
     Type,
@@ -266,22 +267,31 @@ impl<'a> StructBuilder<'a> {
                     offset: 0, // todo
                 }
             })
-            .collect();
+            .collect::<Vec<_>>();
 
-        let handle = self.module_builder.types.insert(
-            naga::Type {
-                name: Some(self.name.clone()),
-                inner: naga::TypeInner::Struct { members, span: 0 },
-            },
-            naga::Span::default(),
-        );
-        let handle = TypeHandle::Type(handle);
+        let handle = if members.is_empty() {
+            TypeHandle::Phantom
+        }
+        else {
+            self.module_builder
+                .struct_fields
+                .insert(self.type_id, self.field_map);
+
+            let handle = self.module_builder.types.insert(
+                naga::Type {
+                    name: Some(self.name.clone()),
+                    inner: naga::TypeInner::Struct {
+                        members,
+                        span: 0, // todo
+                    },
+                },
+                Span::default(),
+            );
+
+            TypeHandle::Type(handle)
+        };
 
         self.module_builder.by_type_id.insert(self.type_id, handle);
-
-        self.module_builder
-            .struct_fields
-            .insert(self.type_id, self.field_map);
 
         handle
     }
@@ -386,9 +396,9 @@ impl<'a> FunctionBuilder<'a> {
         Ok(())
     }
 
-    pub fn add_call<F: 'static, G: FunctionGenerator<R>, R: RicslType>(
+    pub fn add_call<'f, F: 'static, G: FunctionGenerator<R>, R: RicslType>(
         &mut self,
-        f: &F,
+        f: &'f F,
         gen: G,
         args: Vec<Handle<Expression>>,
     ) -> Result<ExpressionHandle<R>, BuilderError> {
@@ -579,6 +589,28 @@ impl<T> ExpressionHandle<T> {
     }
 }
 
+pub enum PhantomReceiver<T> {
+    Expression(ExpressionHandle<T>),
+    Constant(T),
+}
+
+impl<T> Deref for PhantomReceiver<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Expression(_) => panic!("PhantomReceiver<T> is not meant to be dereferenced"),
+            Self::Constant(c) => c,
+        }
+    }
+}
+
+impl<T> From<ExpressionHandle<T>> for PhantomReceiver<T> {
+    fn from(expr: ExpressionHandle<T>) -> Self {
+        Self::Expression(expr)
+    }
+}
+
 impl<T: 'static> ExpressionHandle<T> {
     pub fn type_id(&self) -> TypeId {
         TypeId::of::<T>()
@@ -627,40 +659,75 @@ impl<T: RicslType, const A: AddressSpace> ExpressionHandle<Pointer<T, A>> {
         value: &ExpressionHandle<T>,
         function_builder: &mut FunctionBuilder,
     ) -> Result<(), BuilderError> {
-        if let Some(pointer) = self.get_handle() {
-            let value = value
-                .get_handle()
-                .expect("expected value to have a naga handle");
-            function_builder.add_statement(Statement::Store { pointer, value });
-        }
-        else {
-            // we store a phantom (e.g. ()) by doing nothing
+        match self {
+            ExpressionHandle::Handle { handle, _ty } => {
+                let value = value
+                    .get_handle()
+                    .expect("expected value to have a naga handle");
+                function_builder.add_statement(Statement::Store {
+                    pointer: *handle,
+                    value,
+                });
+            }
+            ExpressionHandle::Phantom { _ty } => {
+                // we store a phantom (e.g. ()) by doing nothing
+            }
+            ExpressionHandle::Const { value } => {
+                todo!("fixme: assigning a constant");
+            }
         }
 
         Ok(())
     }
 }
 
-pub trait Dereference {
-    type Target: AsPointer<Pointer = Self>;
-
-    fn dereference(&self, function_builder: &mut FunctionBuilder) -> Self::Target;
+impl<T> AsExpression<T> for ExpressionHandle<T> {
+    fn as_expression(
+        &self,
+        _function_builder: &mut FunctionBuilder,
+    ) -> Result<ExpressionHandle<T>, BuilderError> {
+        Ok(self.clone())
+    }
 }
 
-pub trait AsPointer {
-    type Pointer: Dereference<Target = Self>;
-
-    fn as_pointer(&self, function_builder: &mut FunctionBuilder) -> Self::Pointer;
-}
-
-pub trait NamedObject {
-    type ExpressionType: RicslType;
+pub trait AsExpression<T> {
     fn as_expression(
         &self,
         function_builder: &mut FunctionBuilder,
-    ) -> Result<ExpressionHandle<Self::ExpressionType>, BuilderError>;
+    ) -> Result<ExpressionHandle<T>, BuilderError>;
 }
 
+pub trait Assign<T> {
+    fn assign<E: AsExpression<T>>(&self, value: E, function_builder: &mut FunctionBuilder) -> Result<(), BuilderError>;
+}
+
+pub trait Dereference {
+    type Target;
+
+    fn dereference(
+        &self,
+        function_builder: &mut FunctionBuilder,
+    ) -> Result<Self::Target, BuilderError>;
+}
+
+pub trait AsPointer {
+    type Pointer;
+
+    fn as_pointer(
+        &self,
+        function_builder: &mut FunctionBuilder,
+    ) -> Result<Self::Pointer, BuilderError>;
+}
+
+pub trait Callable<A, B, R> {
+    fn call(&self, first: A, tail: B, handles: Vec<Handle<Expression>>, function_builder: &mut FunctionBuilder) -> Result<R, BuilderError>;
+}
+
+pub trait HasAddressSpace {
+    const ADDRESS_SPACE: AddressSpace;
+}
+
+/*
 pub trait IntoExpressionHandle<T: RicslType> {
     fn into_expr(
         self,
@@ -672,8 +739,20 @@ pub trait IntoExpressionHandle<T: RicslType> {
         function_builder: &mut FunctionBuilder,
     ) -> Result<ExpressionHandle<Pointer<T, A>>, BuilderError>;
 }
+ */
 
-pub struct FnInputBinding<T: Sized> {
+impl<T: RicslType, const A: AddressSpace> Dereference for ExpressionHandle<Pointer<T, A>> {
+    type Target = ExpressionHandle<T>;
+
+    fn dereference(
+        &self,
+        function_builder: &mut FunctionBuilder,
+    ) -> Result<Self::Target, BuilderError> {
+        self.load(function_builder)
+    }
+}
+
+pub struct FnInputBinding<T> {
     /// Some if this binding has a concrete naga type, None if it's a phantom.
     index: Option<usize>,
     is_mut: bool,
@@ -698,20 +777,24 @@ impl<T> FnInputBinding<T> {
     }
 }
 
-impl<T: RicslType> IntoExpressionHandle<T> for FnInputBinding<T> {
-    fn into_expr(
-        self,
+impl<T: RicslType> AsExpression<T> for FnInputBinding<T> {
+    fn as_expression(
+        &self,
         function_builder: &mut FunctionBuilder,
     ) -> Result<ExpressionHandle<T>, BuilderError> {
-        let pointer = self.as_pointer_expr::<{ AddressSpace::Function }>(function_builder)?;
+        let pointer = self.as_pointer(function_builder)?;
         let expr = pointer.load(function_builder)?;
         Ok(expr)
     }
+}
 
-    fn as_pointer_expr<const A: AddressSpace>(
+impl<T: RicslType> AsPointer for FnInputBinding<T> {
+    type Pointer = ExpressionHandle<Pointer<T, { AddressSpace::Function }>>;
+
+    fn as_pointer(
         &self,
         function_builder: &mut FunctionBuilder,
-    ) -> Result<ExpressionHandle<Pointer<T, A>>, BuilderError> {
+    ) -> Result<Self::Pointer, BuilderError> {
         let expr = if let Some(index) = self.index {
             function_builder.add_expression(Expression::FunctionArgument(index as u32))
         }
@@ -723,20 +806,8 @@ impl<T: RicslType> IntoExpressionHandle<T> for FnInputBinding<T> {
     }
 }
 
-pub struct PhantomReceiver<T>(PhantomData<T>);
-
-impl<T> Deref for PhantomReceiver<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        panic!("PhantomReceiver<T> is not meant to be dereferenced");
-    }
-}
-
-impl<T> From<ExpressionHandle<T>> for PhantomReceiver<T> {
-    fn from(_value: ExpressionHandle<T>) -> Self {
-        Self(PhantomData)
-    }
+impl<T> HasAddressSpace for FnInputBinding<T> {
+    const ADDRESS_SPACE: AddressSpace = AddressSpace::Function;
 }
 
 /// A non-mutable let binding, represented by a named expression in naga, and
@@ -755,18 +826,24 @@ impl<T> LetBinding<T> {
     }
 }
 
-impl<T: RicslType> IntoExpressionHandle<T> for LetBinding<T> {
-    fn into_expr(
-        self,
+impl<T> AsExpression<T> for LetBinding<T> {
+    fn as_expression(
+        &self,
         _function_builder: &mut FunctionBuilder,
     ) -> Result<ExpressionHandle<T>, BuilderError> {
-        self.value.ok_or(BuilderError::LetUnbound)
+        self.value.clone().ok_or(BuilderError::LetUnbound)
     }
+}
 
-    fn as_pointer_expr<const A: AddressSpace>(
+impl<T: RicslType> AsPointer for LetBinding<T> {
+    type Pointer = ExpressionHandle<Pointer<T, { AddressSpace::Function }>>;
+
+    fn as_pointer(
         &self,
         function_builder: &mut FunctionBuilder,
-    ) -> Result<ExpressionHandle<Pointer<T, A>>, BuilderError> {
+    ) -> Result<Self::Pointer, BuilderError> {
+        // todo: create an abstract pointer. we might need to capture the mut-ness of
+        // pointers, so we can't actually construct a mut-pointer here
         todo!("LetBinding::into_pointer_expr")
     }
 }
@@ -793,21 +870,25 @@ impl<T> LetMutBinding<T> {
     }
 }
 
-impl<T: RicslType> IntoExpressionHandle<T> for LetMutBinding<T> {
-    fn into_expr(
-        self,
+impl<T: RicslType> AsExpression<T> for LetMutBinding<T> {
+    fn as_expression(
+        &self,
         function_builder: &mut FunctionBuilder,
     ) -> Result<ExpressionHandle<T>, BuilderError> {
-        let pointer = self.as_pointer_expr::<{ AddressSpace::Function }>(function_builder)?;
+        let pointer = self.as_pointer(function_builder)?;
         let expr = pointer.load(function_builder)?;
 
         Ok(expr)
     }
+}
 
-    fn as_pointer_expr<const A: AddressSpace>(
+impl<T: RicslType> AsPointer for LetMutBinding<T> {
+    type Pointer = ExpressionHandle<Pointer<T, { AddressSpace::Function }>>;
+
+    fn as_pointer(
         &self,
         function_builder: &mut FunctionBuilder,
-    ) -> Result<ExpressionHandle<Pointer<T, A>>, BuilderError> {
+    ) -> Result<Self::Pointer, BuilderError> {
         let expr = if let Some(handle) = self.handle {
             function_builder.add_expression(Expression::LocalVariable(handle))
         }
@@ -819,7 +900,20 @@ impl<T: RicslType> IntoExpressionHandle<T> for LetMutBinding<T> {
     }
 }
 
-pub struct FuncConst<F, A, B, G> {
+impl<T: RicslType> Assign<T> for LetMutBinding<T> {
+    fn assign<E: AsExpression<T>>(&self, value: E, function_builder: &mut FunctionBuilder) -> Result<(), BuilderError> {
+        let value = value.as_expression(function_builder)?;
+        let pointer = self.as_pointer(function_builder)?;
+        pointer.store(&value, function_builder)?;
+        Ok(())
+    }
+}
+
+impl<T> HasAddressSpace for LetMutBinding<T> {
+    const ADDRESS_SPACE: AddressSpace = AddressSpace::Function;
+}
+
+/*pub struct FuncConst<F, A, B, G> {
     pub f: F,
     _ty: PhantomData<(A, B, G)>,
 }
@@ -833,7 +927,7 @@ impl<F: 'static, A: 'static, B: 'static, G: 'static> RicslType for FuncConst<F, 
 }
 
 impl<F: Fn(A, B) -> G + 'static, A: 'static, B: 'static, G: 'static>
-    IntoExpressionHandle<FuncConst<F, A, B, G>> for F
+    AsExpression<FuncConst<F, A, B, G>> for F
 {
     fn into_expr(
         self,
@@ -851,7 +945,19 @@ impl<F: Fn(A, B) -> G + 'static, A: 'static, B: 'static, G: 'static>
     ) -> Result<ExpressionHandle<Pointer<FuncConst<F, A, B, G>, Ad>>, BuilderError> {
         todo!("FuncConst::as_pointer_expr")
     }
+} */
+
+
+
+impl<F: Fn(A, B) -> G + 'static, A, B, G: FunctionGenerator<R>, R: RicslType> Callable<A, B, ExpressionHandle<R>> for F {
+    fn call(&self, first: A, tail: B, handles: Vec<Handle<Expression>>, function_builder: &mut FunctionBuilder) -> Result<ExpressionHandle<R>, BuilderError> {
+        let gen = self(first, tail);
+        let result = function_builder.add_call(self, gen, handles)?;
+        Ok(result)
+    }
 }
+
+
 
 pub struct Field<T, U> {
     base: ExpressionHandle<T>,
@@ -872,21 +978,25 @@ impl<T, U> Field<T, U> {
     }
 }
 
-impl<T: 'static, U: RicslType> IntoExpressionHandle<U> for Field<T, U> {
-    fn into_expr(
-        self,
+impl<T: RicslType, U: RicslType> AsExpression<U> for Field<T, U> {
+    fn as_expression(
+        &self,
         function_builder: &mut FunctionBuilder,
     ) -> Result<ExpressionHandle<U>, BuilderError> {
-        // fixme: where do we get the address space from?
-        let pointer = self.as_pointer_expr::<{ AddressSpace::Function }>(function_builder)?;
+        let pointer = self.as_pointer(function_builder)?;
         let expr = pointer.load(function_builder)?;
         Ok(expr)
     }
+}
 
-    fn as_pointer_expr<const A: AddressSpace>(
+impl<T: RicslType, U: RicslType> AsPointer for Field<T, U> {
+    // fixme
+    type Pointer = ExpressionHandle<Pointer<U, { AddressSpace::Function }>>;
+
+    fn as_pointer(
         &self,
         function_builder: &mut FunctionBuilder,
-    ) -> Result<ExpressionHandle<Pointer<U, A>>, BuilderError> {
+    ) -> Result<Self::Pointer, BuilderError> {
         let field_map = function_builder
             .module_builder
             .struct_fields

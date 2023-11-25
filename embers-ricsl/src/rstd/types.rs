@@ -31,7 +31,7 @@ macro_rules! impl_unary {
 
             fn $method(self) -> Self::Output {
                 ricsl_intrinsics! {
-                    let expr = crate::__private::IntoExpressionHandle::into_expr(_self, function_builder)?.try_get_handle()?;
+                    let expr = crate::__private::AsExpression::as_expression(&_self, function_builder)?.try_get_handle()?;
                     function_builder.add_expression::<$ty>(crate::__private::naga::Expression::Unary {
                         op: crate::__private::naga::UnaryOperator::$op,
                         expr,
@@ -50,8 +50,8 @@ macro_rules! impl_binary {
 
             fn $method(self, rhs: $ty) -> Self::Output {
                 ricsl_intrinsics! {
-                    let left = crate::__private::IntoExpressionHandle::into_expr(_self, function_builder)?.try_get_handle()?;
-                    let right = crate::__private::IntoExpressionHandle::into_expr(rhs, function_builder)?.try_get_handle()?;
+                    let left = crate::__private::AsExpression::as_expression(&_self, function_builder)?.try_get_handle()?;
+                    let right = crate::__private::AsExpression::as_expression(&rhs, function_builder)?.try_get_handle()?;
                     function_builder.add_expression::<$ty>(crate::__private::naga::Expression::Binary {
                         op: crate::__private::naga::BinaryOperator::$op,
                         left,

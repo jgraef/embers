@@ -74,16 +74,25 @@ struct Foo {
     x: u32,
 }
 
+#[ricsl]
+fn bar(a: i32, b: i32) -> i32 {
+    a + b
+}
+
 #[ricsl(entrypoint)]
 fn foo() {
-    let a = Foo { x: 42u32 };
-    let b: u32 = a.x + 1u32;
+    //let a = Foo { x: 42u32 };
+    //let b: u32 = a.x + 1u32;
+    bar(1, 2);
 }
 
 fn main() -> Result<(), Error> {
     dotenvy::dotenv().ok();
     color_eyre::install()?;
     tracing_subscriber::fmt::init();
+
+    //struct Foo(u32);
+    //println!("{:?}", Foo);
 
     let wgsl = r#"
     struct Foo {

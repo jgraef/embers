@@ -260,7 +260,7 @@ pub fn process_entrypoint(input: &ItemFn, args: &FnArgs) -> Result<TokenStream, 
     let generated = quote! {
         #vis fn #ident() -> #private::std::result::Result<#private::Module, #private::BuilderError> {
             let mut module_builder = #private::ModuleBuilder::default();
-            module_builder.add_entrypoint(|_function_builder: &mut #private::FunctionBuilder| {
+            module_builder.add_entrypoint(|mut _function_builder: &mut #private::FunctionBuilder| {
                 _function_builder.add_name(#ident_literal);
                 #output
                 #private::std::result::Result::Ok(())
@@ -619,31 +619,49 @@ fn process_expr<A: StdFlag>(
         output: &mut TokenBuffer,
         name_gen: &mut NameGen,
         private: &TokenStream,
-        func_path: impl ToTokens,
+        func_ref: impl ToTokens,
         args: &[ExprOut],
     ) -> ExprOut {
         let out = name_gen.tmp_var("callres");
 
-        if let Some(first) = args.get(0) {
-            let args_tail = &args[1..];
+        if args.is_empty() {
             output.push(quote! {
-                let _args_handles = [#(#args.get_handle()),*].into_iter().flatten().collect();
-                let _args_self = #private::PhantomReceiver::from(#first.clone());
-                let _args_tail = (#(#args_tail),*);
-            });
-        }
-        else {
-            output.push(quote! {
-                let _args_handles = #private::Vec::new();
+                let _args_handles = #private::std::vec::Vec::new();
                 let _args_self = ();
                 let _args_tail = ();
             });
         }
+        else {
+            output.push(quote! { let mut _args_handles = #private::std::vec::Vec::new(); });
+
+            let mut args_tail = vec![];
+
+            for (i, expr) in args.iter().enumerate() {
+                let arg_name = name_gen.tmp_var("arg");
+                output.push(quote! {
+                    let #arg_name = #private::AsExpression::as_expression(&#expr, &mut _function_builder)?;
+                    if let Some(arg) = #arg_name.get_handle() {
+                        _args_handles.push(arg);
+                    }
+                });
+                if i == 0 {
+                    output.push(quote! {
+                        //let _args_self = #private::PhantomReceiver::from(#arg_name);
+                        let _args_self = #private::std::convert::Into::into(#arg_name);
+                    })
+                }
+                else {
+                    args_tail.push(arg_name);
+                }
+            }
+
+            output.push(quote! {
+                let _args_tail = (#(#args_tail),*);
+            });
+        }
 
         output.push(quote! {
-            let _func = #func_path;
-            let _gen = _func(_args_self, _args_tail);
-            let #out = _function_builder.add_call(&_func, _gen, _args_handles)?;
+            let #out = #private::Callable::call(#func_ref, _args_self, _args_tail, _args_handles, &mut _function_builder)?;
         });
 
         ExprOut::from(out)
@@ -657,6 +675,7 @@ fn process_expr<A: StdFlag>(
         method: &Ident,
         args: &[ExprOut],
     ) -> ExprOut {
+        // fixme
         let out = name_gen.tmp_var("callres");
 
         output.push(quote! {
@@ -671,8 +690,7 @@ fn process_expr<A: StdFlag>(
     macro_rules! emit_func_call_std {
         ($func_path:path, $($args:expr),*) => {{
             let args = &[$($args),*];
-            emit_func_call(output, name_gen, &private, quote!{ #private::rstd::$func_path }, args)
-            //emit_func_call!(quote!{#private::rstd::$func_path}, args)
+            emit_func_call(output, name_gen, &private, quote!{ &#private::rstd::$func_path }, args)
         }};
     }
 
@@ -683,10 +701,7 @@ fn process_expr<A: StdFlag>(
         func: ExprOut,
         args: &[ExprOut],
     ) -> ExprOut {
-        output.push(quote! {
-            let _func = #func.constant().expect("not a function").f;
-        });
-        emit_func_call(output, name_gen, private, quote! { _func }, args)
+        emit_func_call(output, name_gen, private, quote!{ &#func }, args)
     }
 
     let expr_out = match input {
@@ -773,8 +788,8 @@ fn process_expr<A: StdFlag>(
 
             let out = name_gen.tmp_var("field");
             output.push(quote! {
-                let _field = #private::Field::new::<{#private::FieldAccessor::#field_accessor}>(#base);
-                let #out = #private::IntoExpressionHandle::into_expr(_field, _function_builder).unwrap();
+                let #out = #private::Field::new::<{#private::FieldAccessor::#field_accessor}>(#base);
+                //let #out = #private::AsExpression::as_expression(&_field, _function_builder).unwrap();
             });
             out.into()
         }
@@ -830,11 +845,11 @@ fn process_expr<A: StdFlag>(
             // todo: don't emit the IntoExpressionHandle yet. we might want to borrow this
             // path
 
-            let var = name_gen.tmp_var("path");
-            output.push(quote! { let #var = #private::IntoExpressionHandle::into_expr(#path, _function_builder).unwrap(); });
-            var.into()
+            //let var = name_gen.tmp_var("path");
+            //output.push(quote! { let #var = #private::IntoExpressionHandle::into_expr(#path, _function_builder).unwrap(); });
+            //var.into()
 
-            //path.path.clone().into()
+            path.path.clone().into()
         }
         Expr::Reference(ref_) => {
             todo!("ref")

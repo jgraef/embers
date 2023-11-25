@@ -1,6 +1,6 @@
 //#![allow(dead_code, unused_variables)]
 #![allow(incomplete_features)]
-#![feature(arbitrary_self_types, adt_const_params)]
+#![feature(arbitrary_self_types, adt_const_params, generic_const_exprs)]
 
 pub mod builder;
 pub mod rstd;
