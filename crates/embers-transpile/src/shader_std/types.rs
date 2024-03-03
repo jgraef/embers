@@ -1,15 +1,18 @@
 use crate::{
     builder::{
-        ModuleBuilder,
-        TypeHandle,
+        error::BuilderError,
+        expression::ExpressionHandle,
+        function::FunctionBuilder,
+        module::ModuleBuilder,
+        r#type::TypeHandle,
     },
-    ricsl,
-    RicslType,
+    transpile,
+    ShaderType,
 };
 
 macro_rules! impl_primitive {
     ($ty:ident, $kind:ident, $width:expr) => {
-        impl RicslType for $ty {
+        impl ShaderType for $ty {
             fn add_to_module(module_builder: &mut ModuleBuilder) -> TypeHandle {
                 module_builder.add_intrinsic_type::<Self>(
                     None, // note: naga doesn't name these
@@ -25,7 +28,7 @@ macro_rules! impl_primitive {
 
 macro_rules! impl_unary {
     ($ty:ident, $trait:ident, $method:ident, $op:ident) => {
-        #[ricsl]
+        #[transpile]
         impl super::ops::$trait for $ty {
             type Output = Self;
 
@@ -44,7 +47,7 @@ macro_rules! impl_unary {
 
 macro_rules! impl_binary {
     ($ty:ident, $trait:ident, $method:ident, $op:ident) => {
-        #[ricsl]
+        #[transpile]
         impl super::ops::$trait for $ty {
             type Output = $ty;
 
@@ -63,9 +66,9 @@ macro_rules! impl_binary {
     };
 }
 
-impl RicslType for () {
+impl ShaderType for () {
     fn add_to_module(_module_builder: &mut ModuleBuilder) -> TypeHandle {
-        TypeHandle::Unit
+        TypeHandle::Empty
     }
 }
 

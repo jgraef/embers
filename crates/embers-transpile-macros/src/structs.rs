@@ -52,8 +52,7 @@ pub fn impl_ricsl_type_for_struct(
             }
         }
         Fields::Unnamed(unnamed) => {
-            let mut compose_first = None;
-            let mut compose_tail = vec![];
+            let mut compose_types = vec![];
 
             for (i, field) in unnamed.unnamed.iter().enumerate() {
                 let field_type = &field.ty;
@@ -66,31 +65,20 @@ pub fn impl_ricsl_type_for_struct(
                         }
                     }
                 );
-                if i == 0 {
-                    compose_first = Some(
-                        quote! { ::embers_transpile::__private::ExpressionHandle<#field_type> },
-                    );
-                }
-                else {
-                    compose_tail.push(
-                        quote! { ::embers_transpile::__private::ExpressionHandle<#field_type> },
-                    );
-                }
+                compose_types
+                    .push(quote! { ::embers_transpile::__private::ExpressionHandle<#field_type> });
             }
 
-            let compose_first = compose_first.unwrap_or_else(|| quote! { () });
-            let compose_tail = quote! { (#(#compose_tail),*) };
-
             compose_impl = Some(quote! {
-                /*impl #private::Callable<#compose_first, #compose_tail, #private::ExpressionHandle<Self>> for #ident {
+                impl ::embers_transpile::__private::Callable<(#(#compose_types),*), ::embers_transpile::__private::ExpressionHandle<Self>> for #ident {
 
-                }*/
+                }
             });
         }
     }
 
     let generated = quote! {
-        impl ::embers_transpile::__private::RicslType for #ident {
+        impl ::embers_transpile::__private::ShaderType for #ident {
             fn add_to_module(module_builder: &mut ::embers_transpile::__private::ModuleBuilder) -> ::embers_transpile::__private::TypeHandle {
                 let mut struct_builder = module_builder.add_struct::<Self>(#ident_literal);
                 #(#struct_fields)*

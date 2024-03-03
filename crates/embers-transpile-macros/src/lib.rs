@@ -48,8 +48,8 @@ struct DeriveOpts {
     args: StructArgs,
 }
 
-#[proc_macro_derive(RicslType)]
-pub fn derive_ricsl_type(input: TokenStream) -> TokenStream {
+#[proc_macro_derive(ShaderType)]
+pub fn derive_shader_type(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
     let opts = match DeriveOpts::from_derive_input(&input) {
@@ -70,7 +70,7 @@ pub fn derive_ricsl_type(input: TokenStream) -> TokenStream {
 
 #[proc_macro_error]
 #[proc_macro_attribute]
-pub fn ricsl(attrs: TokenStream, input: TokenStream) -> TokenStream {
+pub fn transpile(attrs: TokenStream, input: TokenStream) -> TokenStream {
     let attrs = match NestedMeta::parse_meta_list(attrs.into()) {
         Ok(v) => v,
         Err(e) => {

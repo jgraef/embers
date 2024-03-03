@@ -5,12 +5,15 @@ use std::marker::{
 
 use naga::StorageAccess;
 
-use crate::{
-    builder::{
-        ModuleBuilder,
+use super::{
+    error::BuilderError,
+    expression::ExpressionHandle,
+    function::FunctionBuilder,
+    module::ModuleBuilder,
+    r#type::{
+        ShaderType,
         TypeHandle,
     },
-    RicslType,
 };
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ConstParamTy)]
@@ -47,11 +50,11 @@ impl From<AddressSpace> for naga::AddressSpace {
     }
 }
 
-pub struct Pointer<T: RicslType, const A: AddressSpace> {
+pub struct Pointer<T: ShaderType, const A: AddressSpace> {
     _ty: PhantomData<T>,
 }
 
-impl<T: RicslType, const A: AddressSpace> RicslType for Pointer<T, A> {
+impl<T: ShaderType, const A: AddressSpace> ShaderType for Pointer<T, A> {
     fn add_to_module(module_builder: &mut ModuleBuilder) -> TypeHandle {
         let base = module_builder.get_type_by_id_or_add_it::<T>();
         let base = base
@@ -59,5 +62,38 @@ impl<T: RicslType, const A: AddressSpace> RicslType for Pointer<T, A> {
             .expect("fixme: pointer base is not a naga type");
         let space = A.into();
         module_builder.add_intrinsic_type::<Self>(None, naga::TypeInner::Pointer { base, space })
+    }
+}
+
+pub trait Dereference {
+    type Target;
+
+    fn dereference(
+        &self,
+        function_builder: &mut FunctionBuilder,
+    ) -> Result<Self::Target, BuilderError>;
+}
+
+pub trait AsPointer {
+    type Pointer;
+
+    fn as_pointer(
+        &self,
+        function_builder: &mut FunctionBuilder,
+    ) -> Result<Self::Pointer, BuilderError>;
+}
+
+pub trait HasAddressSpace {
+    const ADDRESS_SPACE: AddressSpace;
+}
+
+impl<T: ShaderType, const A: AddressSpace> Dereference for ExpressionHandle<Pointer<T, A>> {
+    type Target = ExpressionHandle<T>;
+
+    fn dereference(
+        &self,
+        function_builder: &mut FunctionBuilder,
+    ) -> Result<Self::Target, BuilderError> {
+        self.load(function_builder)
     }
 }

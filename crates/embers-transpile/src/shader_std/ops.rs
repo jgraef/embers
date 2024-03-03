@@ -1,12 +1,12 @@
-use embers_transpile_macros::ricsl;
+use embers_transpile_macros::transpile;
 
-use crate::RicslType;
+use crate::ShaderType;
 
 macro_rules! unary_trait {
     ($name:ident, $method:ident) => {
-        #[ricsl]
-        pub trait $name: RicslType {
-            type Output: RicslType;
+        #[transpile]
+        pub trait $name: ShaderType {
+            type Output: ShaderType;
 
             fn $method(self) -> Self::Output;
         }
@@ -15,9 +15,9 @@ macro_rules! unary_trait {
 
 macro_rules! binary_trait {
     ($name:ident, $method:ident) => {
-        #[ricsl]
-        pub trait $name<Rhs = Self>: RicslType {
-            type Output: RicslType;
+        #[transpile]
+        pub trait $name<Rhs = Self>: ShaderType {
+            type Output: ShaderType;
 
             fn $method(self, rhs: Rhs) -> Self::Output;
         }
@@ -26,8 +26,8 @@ macro_rules! binary_trait {
 
 macro_rules! binary_assign_trait {
     ($name:ident, $method:ident) => {
-        #[ricsl]
-        pub trait $name<Rhs = Self>: RicslType {
+        #[transpile]
+        pub trait $name<Rhs = Self>: ShaderType {
             fn $method(&mut self, rhs: Rhs);
         }
     };

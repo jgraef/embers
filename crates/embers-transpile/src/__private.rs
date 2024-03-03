@@ -18,11 +18,30 @@ pub use ::std::{
 };
 
 pub use crate::{
-    builder::*,
-    callable::*,
+    builder::{
+        error::BuilderError,
+        expression::{
+            AsExpression,
+            ExpressionHandle,
+        },
+        function::{
+            Callable,
+            FunctionBuilder,
+            FunctionGenerator,
+            PhantomReceiver,
+        },
+        module::{
+            Module,
+            ModuleBuilder,
+        },
+        r#struct::{
+            FieldAccess,
+            FieldAccessor,
+        },
+        r#type::{
+            ShaderType,
+            TypeHandle,
+        },
+    },
     shader_std,
-    FieldAccess,
-    FieldAccessor,
-    Module,
-    RicslType,
 };

@@ -4,8 +4,8 @@ use std::marker::PhantomData;
 
 use color_eyre::eyre::Error;
 use embers_transpile::{
-    ricsl,
-    RicslType,
+    transpile,
+    ShaderType,
 };
 use naga::Module;
 use owo_colors::{
@@ -71,15 +71,7 @@ fn diff_modules(mut wgsl: Module, ricsl: Module) {
     }
 }
 
-pub struct TypeCapture<T>(PhantomData<T>);
-
-impl<T> TypeCapture<T> {
-    pub fn new(_x: &T) -> Self {
-        Self(PhantomData)
-    }
-}
-
-#[derive(RicslType)]
+#[derive(ShaderType)]
 struct Foo {
     x: u32,
 }
@@ -90,12 +82,12 @@ impl Foo {
     }
 }
 
-#[ricsl]
+#[transpile]
 fn bar(a: i32, b: i32) -> i32 {
     a + b
 }
 
-#[ricsl(entrypoint)]
+#[transpile(entrypoint)]
 fn foo() {
     //let a = Foo { x: 42u32 };
     //let b: u32 = a.x + 1u32;
