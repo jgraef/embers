@@ -259,9 +259,10 @@ impl<'a> FunctionBuilder<'a> {
     }
 
     pub fn add_emit<T>(&mut self, expr: &ExpressionHandle<T>) -> Result<(), BuilderError> {
-        let handle = expr.try_get_handle()?;
-        let range = naga::Range::new_from_bounds(handle, handle);
-        self.add_statement(Statement::Emit(range));
+        if let Some(handle) = expr.get_handle() {
+            let range = naga::Range::new_from_bounds(handle, handle);
+            self.add_statement(Statement::Emit(range));
+        }
         Ok(())
     }
 

@@ -63,7 +63,7 @@ fn diff_modules(mut wgsl: Module, ricsl: Module) {
     for change in diff.iter_all_changes() {
         let (prefix, color) = match change.tag() {
             ChangeTag::Delete => ("wgsl ", AnsiColors::Red),
-            ChangeTag::Insert => ("ricsl", AnsiColors::Green),
+            ChangeTag::Insert => ("tran ", AnsiColors::Green),
             ChangeTag::Equal => ("     ", AnsiColors::Default),
         };
         let line = format!("{prefix} {change}");
@@ -71,27 +71,14 @@ fn diff_modules(mut wgsl: Module, ricsl: Module) {
     }
 }
 
-#[derive(ShaderType)]
-struct Foo {
-    x: u32,
-}
-
-impl Foo {
-    fn bar(&self, x: u32) -> u32 {
-        x * self.x
-    }
-}
-
 #[transpile]
-fn bar(a: i32, b: i32) -> i32 {
-    a + b
+fn bar(x: i32, y: i32) -> i32 {
+    x + y
 }
 
 #[transpile(entrypoint)]
 fn foo() {
-    //let a = Foo { x: 42u32 };
-    //let b: u32 = a.x + 1u32;
-    bar(1, 2);
+    let z = bar(1, 2);
 }
 
 fn main() -> Result<(), Error> {
@@ -103,18 +90,14 @@ fn main() -> Result<(), Error> {
     //println!("{:?}", Foo);
 
     let wgsl = r#"
-    struct Foo {
-        x: u32,
+    fn bar(x: i32, y: i32) -> i32 {
+        return x + y;
     }
+
     @compute
     @workgroup_size(64, 1, 1)
     fn foo() {
-        let a = Foo(42u);
-        let b = a.x + 1u;
-        //let c = *b;
-    }
-    fn bar(a: i32, b: i32) -> i32 {
-        return a + b;
+        let z = bar(1, 2);
     }
     "#;
 

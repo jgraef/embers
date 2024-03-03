@@ -42,6 +42,7 @@ pub use crate::{
             ShaderType,
             TypeHandle,
         },
+        variable::LetBinding,
     },
     shader_std,
 };

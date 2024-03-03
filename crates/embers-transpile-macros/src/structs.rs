@@ -24,7 +24,6 @@ pub fn impl_ricsl_type_for_struct(
 
     let mut struct_fields = vec![];
     let mut accessor_impls = vec![];
-    let mut compose_impl = None;
 
     match &strct.fields {
         Fields::Unit => {}
@@ -52,8 +51,6 @@ pub fn impl_ricsl_type_for_struct(
             }
         }
         Fields::Unnamed(unnamed) => {
-            let mut compose_types = vec![];
-
             for (i, field) in unnamed.unnamed.iter().enumerate() {
                 let field_type = &field.ty;
                 struct_fields.push(quote! { struct_builder.add_unnamed_field::<#field_type>(); });
@@ -65,15 +62,7 @@ pub fn impl_ricsl_type_for_struct(
                         }
                     }
                 );
-                compose_types
-                    .push(quote! { ::embers_transpile::__private::ExpressionHandle<#field_type> });
             }
-
-            compose_impl = Some(quote! {
-                impl ::embers_transpile::__private::Callable<(#(#compose_types),*), ::embers_transpile::__private::ExpressionHandle<Self>> for #ident {
-
-                }
-            });
         }
     }
 

@@ -341,14 +341,17 @@ fn process_function(
 
     let result_var = process_block_inner(block, &mut output, &mut name_gen)?;
 
-    if let Some(result_var) = result_var {
-        output.push(quote! {
-            _function_builder.add_emit(&#result_var)?;
-            _function_builder.add_statement(::embers_transpile::__private::naga::Statement::Return {
-                value: #result_var.get_handle(),
-            });
-        })
-    }
+    // make sure the return value type matches
+    output.push(quote! {
+        let #result_var: ::embers_transpile::__private::ExpressionHandle<#ret> = #result_var;
+    });
+
+    output.push(quote! {
+        _function_builder.add_emit(&#result_var)?;
+        _function_builder.add_statement(::embers_transpile::__private::naga::Statement::Return {
+            value: #result_var.get_handle(),
+        });
+    });
 
     let generated = quote! {
         #vis #sig {
@@ -410,15 +413,32 @@ pub fn transform_signature_to_generator(sig: &Signature) -> (TokenStream, TokenS
     (sig, ret)
 }
 
+fn implicit_unit(
+    expr: Option<ExprOut>,
+    output: &mut TokenBuffer,
+    name_gen: &mut NameGen,
+) -> ExprOut {
+    expr.unwrap_or_else(|| {
+        let var = name_gen.tmp_var("implicit_unit");
+        output.push(quote! {
+            let #var = ::embers_transpile::__private::ExpressionHandle::<()>::from_empty();
+        });
+        ExprOut::from(var)
+    })
+}
+
 fn process_block_inner(
     input: &Block,
     output: &mut TokenBuffer,
     name_gen: &mut NameGen,
-) -> Result<Option<ExprOut>, Error> {
+) -> Result<ExprOut, Error> {
     let mut result = None;
     for stmt in &input.stmts {
-        result = process_stmt(stmt, output, name_gen)?;
+        result = Some(process_stmt(stmt, output, name_gen)?);
     }
+
+    let result = implicit_unit(result, output, name_gen);
+
     Ok(result)
 }
 
@@ -426,7 +446,7 @@ fn process_stmt(
     input: &Stmt,
     output: &mut TokenBuffer,
     name_gen: &mut NameGen,
-) -> Result<Option<ExprOut>, Error> {
+) -> Result<ExprOut, Error> {
     let result = match input {
         Stmt::Local(local) => {
             let rhs = if let Some(rhs) = &local.init {
@@ -482,6 +502,8 @@ fn process_stmt(
         Stmt::Expr(expr, _) => Some(process_expr(expr, output, name_gen)?),
         Stmt::Macro(macro_) => Some(process_macro(&macro_.mac, output, name_gen)?),
     };
+
+    let result = implicit_unit(result, output, name_gen);
 
     Ok(result)
 }
@@ -740,12 +762,10 @@ fn process_expr(
             let mut block_output = TokenBuffer::default();
             let var = name_gen.tmp_var("block");
             let block_result = process_block_inner(&block.block, &mut block_output, name_gen)?;
-            if let Some(block_result) = block_result {
-                block_output.push(block_result);
-            }
             output.push(quote! {
                 let #var = {
                     #block_output
+                    #block_result
                 };
             });
             var.into()

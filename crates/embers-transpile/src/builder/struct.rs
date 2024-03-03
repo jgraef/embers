@@ -44,13 +44,6 @@ pub trait FieldAccess<const FIELD: FieldAccessor> {
     type Type;
 }
 
-pub trait Composable<A>: ShaderType {
-    fn compose(
-        values: A,
-        function_generator: &mut FunctionBuilder,
-    ) -> Result<ExpressionHandle<Self>, BuilderError>;
-}
-
 #[derive(Debug)]
 struct StructField {
     name: Option<String>,
