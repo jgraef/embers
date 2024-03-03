@@ -1,0 +1,16 @@
+[package]
+name = "embers-transpile-macros"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+thiserror = "1"
+syn = { version = "2", features = ["full", "extra-traits", "parsing", "printing"] }
+proc-macro2 = "1"
+quote = "1"
+darling = "0.20"
+strum = { version = "0.25", features = ["derive"] }
+proc-macro-error = "1"

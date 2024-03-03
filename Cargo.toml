@@ -1,9 +1,9 @@
 [workspace]
 members = [
-  "embers",
-  "embers-llama",
-  "embers-ricsl",
-  "embers-ricsl-macros",
-  "naga-test",
+  "crates/embers-core",
+  "crates/embers-llama",
+  "crates/embers-transpile",
+  "crates/embers-transpile-macros",
+  "crates/naga-test",
 ]
 resolver = "2"
