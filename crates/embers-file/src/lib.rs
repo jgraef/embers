@@ -1,7 +1,7 @@
 use std::io::Error;
 
 use byteorder::ByteOrder;
-use futures_lite::io::AsyncReadExt;
+use futures::io::AsyncReadExt;
 
 pub mod gguf;
 

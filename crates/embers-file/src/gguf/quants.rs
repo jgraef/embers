@@ -2,16 +2,7 @@ use bytemuck::{
     Pod,
     Zeroable,
 };
-use futures_lite::AsyncRead;
-use half::f16;
-
-use super::{
-    Error,
-    GgmlElement,
-    GgmlType,
-    Parse,
-};
-use crate::element::{
+use embers_core::element::{
     block::Block,
     wgsl::{
         WgslDecodeFromBlock,
@@ -19,6 +10,15 @@ use crate::element::{
         WgslType,
     },
     Element,
+};
+use futures::AsyncRead;
+use half::f16;
+
+use super::{
+    Error,
+    GgmlElement,
+    GgmlType,
+    Parse,
 };
 
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]

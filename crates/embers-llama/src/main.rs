@@ -8,7 +8,7 @@ mod tokenizer;
 use std::path::PathBuf;
 
 use color_eyre::eyre::Error;
-use embers_core::file_formats::gguf::{
+use embers_file::gguf::{
     metadata::MetadataValueType,
     Gguf,
 };

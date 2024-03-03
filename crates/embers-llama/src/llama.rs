@@ -1,4 +1,4 @@
-use embers_core::file_formats::gguf::metadata::{
+use embers_file::gguf::metadata::{
     General,
     Tokenizer,
 };

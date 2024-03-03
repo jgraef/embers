@@ -10,7 +10,7 @@ use std::{
 };
 
 use byteorder::LittleEndian;
-use futures_lite::{
+use futures::{
     AsyncRead,
     Future,
 };
@@ -25,7 +25,7 @@ use super::{
     Error,
     Parse,
 };
-use crate::file_formats::ReadBytesAsyncExt;
+use crate::ReadBytesAsyncExt;
 
 pub struct Metadata(pub BTreeMap<String, MetadataValue>);
 

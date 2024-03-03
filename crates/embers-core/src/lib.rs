@@ -3,7 +3,6 @@
 
 pub mod element;
 pub mod error;
-pub mod file_formats;
 pub mod gpu;
 pub mod kernel;
 pub mod tensor;

@@ -7,7 +7,14 @@ use std::{
 };
 
 use byteorder::LittleEndian;
-use futures_lite::{
+use embers_core::{
+    element::Element,
+    error::DimensionMismatch,
+    tensor::shape::Shape,
+    Gpu,
+    Tensor,
+};
+use futures::{
     io::{
         AsyncRead,
         AsyncReadExt,
@@ -20,16 +27,9 @@ use half::f16;
 use int_enum::IntEnum;
 
 use super::ReadBytesAsyncExt;
-use crate::{
-    element::Element,
-    error::DimensionMismatch,
-    file_formats::gguf::metadata::{
-        Metadata,
-        MetadataValue,
-    },
-    tensor::shape::Shape,
-    Gpu,
-    Tensor,
+use crate::gguf::metadata::{
+    Metadata,
+    MetadataValue,
 };
 
 #[derive(Debug, thiserror::Error)]

@@ -1,9 +1,10 @@
 [workspace]
 members = [
-  "crates/embers-core",
+  "crates/embers-core", "crates/embers-file",
   "crates/embers-llama",
   "crates/embers-transpile",
   "crates/embers-transpile-macros",
+  "crates/embers-file",
   "crates/naga-test",
 ]
 resolver = "2"
