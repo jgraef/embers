@@ -3,6 +3,7 @@
 mod args;
 mod error;
 mod functions;
+mod global;
 mod structs;
 mod traits;
 mod utils;
@@ -19,11 +20,15 @@ use syn::{
     Data,
     DeriveInput,
     Item,
+    ItemStatic,
+    Local,
+    Stmt,
 };
 
 use crate::{
     args::{
         FnArgs,
+        GlobalArgs,
         ImplArgs,
         StructArgs,
         TraitArgs,
@@ -32,6 +37,7 @@ use crate::{
         process_bare_function,
         process_entrypoint,
     },
+    global::GlobalVar,
     structs::impl_ricsl_type_for_struct,
     traits::{
         process_impl,
@@ -117,6 +123,19 @@ pub fn transpile(attrs: TokenStream, input: TokenStream) -> TokenStream {
         }
         _ => panic!("invalid use of #[ricsl] macro"),
     };
+
+    println!("{output}");
+
+    output.into()
+}
+
+#[proc_macro_error]
+#[proc_macro]
+pub fn global(input: TokenStream) -> TokenStream {
+    //let input: proc_macro2::TokenStream = input.into();
+
+    let global = parse_macro_input!(input as GlobalVar);
+    let output = global.process().unwrap();
 
     println!("{output}");
 

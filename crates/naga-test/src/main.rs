@@ -4,6 +4,7 @@ use std::marker::PhantomData;
 
 use color_eyre::eyre::Error;
 use embers_transpile::{
+    global,
     transpile,
     ShaderType,
 };
@@ -81,6 +82,11 @@ fn foo() {
     let z = bar(1, 2);
 }
 
+//global! {
+//    #[embers(group = 0, binding = 0, address_space(storage(write)))]
+//    static parameters: [i32];
+//}
+
 fn main() -> Result<(), Error> {
     dotenvy::dotenv().ok();
     color_eyre::install()?;
@@ -90,24 +96,25 @@ fn main() -> Result<(), Error> {
     //println!("{:?}", Foo);
 
     let wgsl = r#"
-    fn bar(x: i32, y: i32) -> i32 {
-        return x + y;
-    }
+    @group(0)
+    @binding(0)
+    var<storage, read> parameters: array<i32>;    
 
     @compute
     @workgroup_size(64, 1, 1)
     fn foo() {
-        let z = bar(1, 2);
     }
     "#;
 
     let wgsl = naga::front::wgsl::parse_str(wgsl)?;
     //println!("{wgsl:#?}");
 
-    let ricsl = foo()?;
+    //let ricsl = foo()?;
     //print_module("ricsl", &module.naga);
 
-    diff_modules(wgsl, ricsl.naga);
+    //diff_modules(wgsl, ricsl.naga);
+
+    print!("{:#?}", wgsl);
 
     Ok(())
 }

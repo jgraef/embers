@@ -31,7 +31,7 @@ use wgpu_async::{
     AsyncBufferSlice,
 };
 
-use crate::gpu::Gpu;
+use crate::backend::gpu::Gpu;
 
 #[derive(Debug)]
 struct TensorBufferInner {

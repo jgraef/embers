@@ -1,10 +1,4 @@
-use crate::{
-    gpu::Gpu,
-    kernel::binding::{
-        KernelBindingError,
-        KernelParameterError,
-    },
-};
+use crate::backend::gpu::Gpu;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -45,24 +39,6 @@ impl ShapeMismatch {
             second: second.to_vec(),
         }
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum KernelError {
-    #[error("shape mismatch")]
-    ShapeMismatch(#[from] ShapeMismatch),
-
-    #[error("gpu mismatch")]
-    GpuMismatch(#[from] GpuMismatch),
-
-    #[error("kernel parameter error")]
-    KernelParameter(#[from] KernelParameterError),
-
-    #[error("kernel binding error")]
-    KernelBinding(#[from] KernelBindingError),
-
-    #[error("invalid axis")]
-    InvalidAxis(#[from] InvalidAxis),
 }
 
 #[derive(Debug, thiserror::Error)]

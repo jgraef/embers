@@ -28,6 +28,7 @@ use self::{
     view::TensorView,
 };
 use crate::{
+    backend::gpu::Gpu,
     element::{
         block::{
             DecodeFromBlock,
@@ -41,7 +42,6 @@ use crate::{
         InvalidAxis,
         SliceError,
     },
-    gpu::Gpu,
 };
 
 #[derive(Clone, Derivative)]
@@ -170,7 +170,8 @@ impl<const D: usize, T: Element> Tensor<D, T> {
 
     async fn as_owned(&self) -> Tensor<D, T> {
         if self.buffer.is_shared() {
-            self.id().await.expect("id() failed")
+            //self.id().await.expect("id() failed")
+            todo!();
         }
         else {
             self.clone()
@@ -182,7 +183,8 @@ impl<const D: usize, T: Element> Tensor<D, T> {
             self.clone()
         }
         else {
-            self.id().await.expect("id() failed")
+            //self.id().await.expect("id() failed")
+            todo!();
         }
     }
 

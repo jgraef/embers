@@ -12,17 +12,10 @@ use wgpu_async::{
     AsyncQueue,
 };
 
-use crate::{
-    error::{
-        Error,
-        GpuMismatch,
-        KernelError,
-    },
-    kernel::{
-        executor::KernelExecutor,
-        Kernel,
-        KernelSignature,
-    },
+use super::executor::Executor;
+use crate::error::{
+    Error,
+    GpuMismatch,
 };
 
 #[derive(Debug)]
@@ -30,7 +23,7 @@ struct Inner {
     adapter: Adapter,
     device: AsyncDevice,
     queue: AsyncQueue,
-    executor: KernelExecutor,
+    executor: Executor,
     limits: Limits,
 }
 
@@ -62,7 +55,7 @@ impl Gpu {
 
         let (device, queue) = wgpu_async::wrap(Arc::new(device), Arc::new(queue));
 
-        let executor = KernelExecutor::new();
+        let executor = Executor::new();
 
         Ok(Self {
             inner: Arc::new(Inner {
@@ -83,7 +76,7 @@ impl Gpu {
         &self.inner.queue
     }
 
-    pub(crate) fn executor(&self) -> &KernelExecutor {
+    pub(crate) fn executor(&self) -> &Executor {
         &self.inner.executor
     }
 
@@ -105,13 +98,6 @@ impl Gpu {
                 second: other.clone(),
             })
         }
-    }
-
-    pub async fn run_kernel<'a, const D: usize, K: Kernel>(
-        &self,
-        args: <<K as Kernel>::Signature as KernelSignature>::Args<'a, D>,
-    ) -> Result<(), KernelError> {
-        self.inner.executor.run_kernel::<D, K>(self, args).await
     }
 
     pub fn name(&self) -> String {

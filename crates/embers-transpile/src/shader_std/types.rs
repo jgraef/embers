@@ -1,8 +1,5 @@
 use crate::{
     builder::{
-        error::BuilderError,
-        expression::ExpressionHandle,
-        function::FunctionBuilder,
         module::ModuleBuilder,
         r#type::TypeHandle,
     },

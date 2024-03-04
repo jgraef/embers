@@ -34,6 +34,7 @@ pub use crate::{
             Module,
             ModuleBuilder,
         },
+        pointer::AddressSpace,
         r#struct::{
             FieldAccess,
             FieldAccessor,
@@ -42,7 +43,10 @@ pub use crate::{
             ShaderType,
             TypeHandle,
         },
-        variable::LetBinding,
+        variable::{
+            GlobalVariable,
+            LetBinding,
+        },
     },
     shader_std,
 };

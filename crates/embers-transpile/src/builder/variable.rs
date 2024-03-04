@@ -3,6 +3,7 @@ use std::marker::PhantomData;
 use naga::{
     Expression,
     LocalVariable,
+    ResourceBinding,
 };
 
 use super::{
@@ -12,13 +13,17 @@ use super::{
         ExpressionHandle,
     },
     function::FunctionBuilder,
+    module::ModuleBuilder,
     pointer::{
         AddressSpace,
         AsPointer,
         HasAddressSpace,
         Pointer,
     },
-    r#type::ShaderType,
+    r#type::{
+        ShaderType,
+        TypeHandle,
+    },
 };
 
 pub trait Assign<T> {
@@ -134,4 +139,12 @@ impl<T: ShaderType> Assign<T> for LetMutBinding<T> {
 
 impl<T> HasAddressSpace for LetMutBinding<T> {
     const ADDRESS_SPACE: AddressSpace = AddressSpace::Function;
+}
+
+pub trait GlobalVariable {
+    const NAME: &'static str;
+    const ADDRESS_SPACE: AddressSpace;
+    const BINDING: Option<ResourceBinding>;
+
+    fn register_type(module_builder: &mut ModuleBuilder) -> TypeHandle;
 }

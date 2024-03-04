@@ -12,6 +12,7 @@ extern crate self as embers_transpile;
 pub mod __private;
 
 pub use embers_transpile_macros::{
+    global,
     transpile,
     ShaderType,
 };
