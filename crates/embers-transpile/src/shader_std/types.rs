@@ -123,6 +123,22 @@ impl<T: ShaderType + Width> ShaderType for [T] {
     }
 }
 
+/*#[transpile]
+impl<T: ShaderType + Width> Index<u32> for [T] {
+    type Output = T;
+
+    fn index(&self, index: u32) -> Self::Output {
+        ::embers_transpile::__private::intrinsic! {
+            let base = crate::__private::AsExpression::as_expression(&_self, function_builder)?.try_get_handle()?;
+            let index = crate::__private::AsExpression::as_expression(&index, function_builder)?.try_get_handle()?;
+            function_builder.add_expression::<Self::Output>(crate::__private::naga::Expression::Access {
+                base,
+                index,
+            })
+        }
+    }
+}*/
+
 impl<T: ShaderType + Width, const N: usize> ShaderType for [T; N] {
     fn add_to_module(module_builder: &mut ModuleBuilder) -> Result<TypeHandle, BuilderError> {
         module_builder.add_sized_array::<T, N>()

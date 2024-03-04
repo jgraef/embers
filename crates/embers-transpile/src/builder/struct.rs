@@ -69,12 +69,17 @@ impl<'a> StructBuilder<'a> {
         }
     }
 
-    pub fn add_named_field<T: ShaderType>(&mut self, name: impl ToString) {
-        self.add_field::<T>(Some(name.to_string()));
+    pub fn add_named_field<T: ShaderType>(
+        &mut self,
+        name: impl ToString,
+    ) -> Result<(), BuilderError> {
+        self.add_field::<T>(Some(name.to_string()))?;
+        Ok(())
     }
 
-    pub fn add_unnamed_field<T: ShaderType>(&mut self) {
-        self.add_field::<T>(None);
+    pub fn add_unnamed_field<T: ShaderType>(&mut self) -> Result<(), BuilderError> {
+        self.add_field::<T>(None)?;
+        Ok(())
     }
 
     pub fn add_field<T: ShaderType>(&mut self, name: Option<String>) -> Result<(), BuilderError> {

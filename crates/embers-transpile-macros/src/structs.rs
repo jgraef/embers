@@ -12,7 +12,7 @@ use crate::{
     utils::ident_to_literal,
 };
 
-pub fn impl_ricsl_type_for_struct(
+pub fn impl_shader_type_for_struct(
     ident: &Ident,
     strct: &DataStruct,
     args: &StructArgs,
@@ -69,9 +69,9 @@ pub fn impl_ricsl_type_for_struct(
     let generated = quote! {
         impl ::embers_transpile::__private::ShaderType for #ident {
             fn add_to_module(module_builder: &mut ::embers_transpile::__private::ModuleBuilder) -> ::embers_transpile::__private::Result<::embers_transpile::__private::TypeHandle, ::embers_transpile::__private::BuilderError> {
-                let mut struct_builder = module_builder.add_struct::<Self>(#ident_literal)?;
+                let mut struct_builder = module_builder.add_struct(#ident_literal);
                 #(#struct_fields)*
-                ::embers_transpile::__private::Ok(struct_builder.build())
+                ::embers_transpile::__private::Ok(struct_builder.build::<Self>())
             }
         }
         #(#accessor_impls)*

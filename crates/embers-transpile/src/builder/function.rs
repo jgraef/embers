@@ -39,65 +39,129 @@ use super::{
     variable::LetMutBinding,
 };
 
-pub trait FunctionGenerator<R: ShaderType>: 'static {
+pub trait GenerateFunction: 'static {
     fn generate(&self, function_builder: &mut FunctionBuilder) -> Result<(), BuilderError>;
 }
 
-impl<F: Fn(&mut FunctionBuilder) -> Result<(), BuilderError> + 'static, R: ShaderType>
-    FunctionGenerator<R> for F
-{
-    fn generate(&self, function_builder: &mut FunctionBuilder) -> Result<(), BuilderError> {
-        self(function_builder)
-    }
+pub trait GenerateCall: 'static {
+    type Return;
+    fn call(
+        &self,
+        function_builder: &mut FunctionBuilder,
+    ) -> Result<ExpressionHandle<Self::Return>, BuilderError>;
 }
 
-pub enum PhantomReceiver<T> {
-    MethodCall(ExpressionHandle<T>),
-    FunctionCall(T),
+pub struct CallGenerator<B, C, R> {
+    body: B,
+    call: C,
+    _return_type: PhantomData<R>,
 }
 
-impl<T> std::ops::Deref for PhantomReceiver<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        match self {
-            Self::MethodCall(_) => {
-                panic!("fixme: PhantomReceiver::MethodCall is not meant to be dereferenced")
-            }
-            Self::FunctionCall(c) => c,
+impl<B, C, R> CallGenerator<B, C, R> {
+    pub fn new(body: B, call: C) -> Self {
+        Self {
+            body,
+            call,
+            _return_type: PhantomData,
         }
     }
 }
 
-impl<T> From<ExpressionHandle<T>> for PhantomReceiver<T> {
-    fn from(expr: ExpressionHandle<T>) -> Self {
-        Self::MethodCall(expr)
+impl<
+        B: Fn(&mut FunctionBuilder) -> Result<(), BuilderError> + 'static,
+        C: Fn(&mut FunctionBuilder, TypeHandle) -> Result<ExpressionHandle<R>, BuilderError> + 'static,
+        R: 'static,
+    > GenerateCall for CallGenerator<B, C, R>
+{
+    type Return = R;
+
+    fn call(
+        &self,
+        function_builder: &mut FunctionBuilder,
+    ) -> Result<ExpressionHandle<R>, BuilderError> {
+        let func_handle = function_builder
+            .module_builder
+            .get_func_by_id_or_add_it(self)?;
+        let ret_handle = (self.call)(function_builder, func_handle)?;
+        Ok(ret_handle)
     }
 }
 
-pub trait Callable<A, B, R> {
-    fn call(
-        &self,
-        first: A,
-        tail: B,
-        handles: Vec<Handle<Expression>>,
-        function_builder: &mut FunctionBuilder,
-    ) -> Result<R, BuilderError>;
+impl<B: Fn(&mut FunctionBuilder) -> Result<(), BuilderError> + 'static, C: 'static, R: 'static>
+    GenerateFunction for CallGenerator<B, C, R>
+{
+    fn generate(&self, function_builder: &mut FunctionBuilder) -> Result<(), BuilderError> {
+        (self.body)(function_builder)?;
+        Ok(())
+    }
 }
 
-impl<F: Fn(A, B) -> G + 'static, A, B, G: FunctionGenerator<R>, R: ShaderType>
-    Callable<A, B, ExpressionHandle<R>> for F
+pub struct EntrypointGenerator<B> {
+    body: B,
+}
+
+impl<B> EntrypointGenerator<B> {
+    pub fn new(body: B) -> Self {
+        Self { body }
+    }
+}
+
+impl<B: Fn(&mut FunctionBuilder) -> Result<(), BuilderError> + 'static> GenerateFunction
+    for EntrypointGenerator<B>
 {
-    fn call(
+    fn generate(&self, function_builder: &mut FunctionBuilder) -> Result<(), BuilderError> {
+        (self.body)(function_builder)?;
+        Ok(())
+    }
+}
+
+pub struct PhantomReceiver<T: ?Sized> {
+    handle: ExpressionHandle<T>,
+}
+
+impl<T: ?Sized> std::ops::Deref for PhantomReceiver<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        panic!("bug: PhantomReceiver is not meant to be dereferenced")
+    }
+}
+
+impl<T: ?Sized> From<ExpressionHandle<T>> for PhantomReceiver<T> {
+    fn from(handle: ExpressionHandle<T>) -> Self {
+        Self { handle }
+    }
+}
+
+impl<T: ?Sized> AsExpression<T> for PhantomReceiver<T> {
+    fn as_expression(
         &self,
-        first: A,
-        tail: B,
-        handles: Vec<Handle<Expression>>,
-        function_builder: &mut FunctionBuilder,
-    ) -> Result<ExpressionHandle<R>, BuilderError> {
-        let gen = self(first, tail);
-        let result = function_builder.add_call(self, gen, handles)?;
-        Ok(result)
+        _function_builder: &mut FunctionBuilder,
+    ) -> Result<ExpressionHandle<T>, BuilderError> {
+        Ok(self.handle.clone())
+    }
+}
+
+pub struct PhantomReceiverPointer<T: ?Sized, const ADDRESS_SPACE: AddressSpace> {
+    _ty: PhantomData<T>,
+}
+
+impl<T: ?Sized, const ADDRESS_SPACE: AddressSpace> std::ops::Deref
+    for PhantomReceiverPointer<T, ADDRESS_SPACE>
+{
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        panic!("bug: PhantomReceiverPointer is not meant to be dereferenced")
+    }
+}
+
+impl<T: ShaderType + ?Sized, const ADDRESS_SPACE: AddressSpace>
+    From<ExpressionHandle<Pointer<T, { ADDRESS_SPACE }>>>
+    for PhantomReceiverPointer<T, { ADDRESS_SPACE }>
+{
+    fn from(_handle: ExpressionHandle<Pointer<T, { ADDRESS_SPACE }>>) -> Self {
+        Self { _ty: PhantomData }
     }
 }
 
@@ -187,7 +251,7 @@ impl<'a> FunctionBuilder<'a> {
         Ok(())
     }
 
-    pub fn add_expression<T>(&mut self, expr: Expression) -> ExpressionHandle<T> {
+    pub fn add_expression<T: ?Sized>(&mut self, expr: Expression) -> ExpressionHandle<T> {
         let handle = self.expressions.append(expr, Default::default());
         ExpressionHandle::from_handle(handle)
     }
@@ -202,14 +266,12 @@ impl<'a> FunctionBuilder<'a> {
         Ok(())
     }
 
-    pub fn add_call<'f, F: 'static, G: FunctionGenerator<R>, R: ShaderType>(
+    pub fn add_call<R: ShaderType>(
         &mut self,
-        f: &'f F,
-        gen: G,
-        args: Vec<Handle<Expression>>,
+        function: TypeHandle,
+        args: impl IntoIterator<Item = Handle<Expression>>,
     ) -> Result<ExpressionHandle<R>, BuilderError> {
-        let type_handle = self.module_builder.get_func_by_id_or_add_it(f, gen)?;
-        let naga_fun = type_handle.try_get_func()?;
+        let naga_fun = function.try_get_func()?;
 
         let ret_type = self.module_builder.get_type_by_id_or_add_it::<R>()?;
 
@@ -223,7 +285,7 @@ impl<'a> FunctionBuilder<'a> {
 
         self.add_statement(Statement::Call {
             function: naga_fun,
-            arguments: args,
+            arguments: args.into_iter().collect(),
             result: ret.get_handle(),
         });
 

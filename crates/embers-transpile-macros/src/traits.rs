@@ -54,9 +54,9 @@ pub fn process_trait(input: &ItemTrait, args: &TraitArgs) -> Result<TokenStream,
 }
 
 pub fn process_impl(input: &ItemImpl, args: &ImplArgs) -> Result<TokenStream, Error> {
-    let trait_for = input.trait_.as_ref().map(|(not, trait_, _)| {
+    let trait_for = input.trait_.as_ref().map(|(not, trait_, for_token)| {
         assert!(not.is_none());
-        quote! { #trait_ for }
+        quote! { #trait_ #for_token }
     });
     let self_ty = &input.self_ty;
 
@@ -71,11 +71,11 @@ pub fn process_impl(input: &ItemImpl, args: &ImplArgs) -> Result<TokenStream, Er
         }
     }
 
-    //let generic_params = &input.generics.params;
-    //let where_clause = &input.generics.where_clause;
+    let generic_params = &input.generics.params;
+    let where_clause = &input.generics.where_clause;
 
     let output = quote! {
-        impl #trait_for #self_ty {
+        impl <#generic_params> #trait_for #self_ty #where_clause {
             #output
         }
     };

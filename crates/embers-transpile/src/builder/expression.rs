@@ -25,7 +25,7 @@ use super::{
 
 #[derive(Debug)]
 #[must_use]
-pub enum ExpressionHandle<T> {
+pub enum ExpressionHandle<T: ?Sized> {
     Handle {
         handle: naga::Handle<Expression>,
         _ty: PhantomData<T>,
@@ -39,6 +39,15 @@ pub enum ExpressionHandle<T> {
 }
 
 impl<T> ExpressionHandle<T> {
+    pub fn from_constant(value: T) -> Self {
+        // if we take an Arc as argument instead, we can even support ?Sized constants
+        Self::Const {
+            value: Arc::new(value),
+        }
+    }
+}
+
+impl<T: ?Sized> ExpressionHandle<T> {
     pub fn from_handle(handle: Handle<Expression>) -> Self {
         Self::Handle {
             handle,
@@ -48,12 +57,6 @@ impl<T> ExpressionHandle<T> {
 
     pub fn from_empty() -> Self {
         Self::Empty { _ty: PhantomData }
-    }
-
-    pub fn from_constant(value: T) -> Self {
-        Self::Const {
-            value: Arc::new(value),
-        }
     }
 
     pub fn get_handle(&self) -> Option<Handle<Expression>> {
@@ -86,7 +89,7 @@ impl<T: 'static> ExpressionHandle<T> {
     }
 }
 
-impl<T> Clone for ExpressionHandle<T> {
+impl<T: ?Sized> Clone for ExpressionHandle<T> {
     fn clone(&self) -> Self {
         match self {
             Self::Handle { handle, _ty } => {
@@ -105,51 +108,6 @@ impl<T> Clone for ExpressionHandle<T> {
     }
 }
 
-impl<T: ShaderType, const A: AddressSpace> ExpressionHandle<Pointer<T, A>> {
-    pub fn load(
-        &self,
-        function_builder: &mut FunctionBuilder,
-    ) -> Result<ExpressionHandle<T>, BuilderError> {
-        let expr = match self {
-            ExpressionHandle::Handle { handle, .. } => {
-                let expr = function_builder.add_expression(Expression::Load { pointer: *handle });
-                function_builder.add_emit(&expr)?;
-                expr
-            }
-            ExpressionHandle::Empty { _ty } => ExpressionHandle::from_empty(),
-            ExpressionHandle::Const { value } => todo!(),
-        };
-
-        Ok(expr)
-    }
-
-    pub fn store(
-        &self,
-        value: &ExpressionHandle<T>,
-        function_builder: &mut FunctionBuilder,
-    ) -> Result<(), BuilderError> {
-        match self {
-            ExpressionHandle::Handle { handle, _ty } => {
-                let value = value
-                    .get_handle()
-                    .expect("expected value to have a naga handle");
-                function_builder.add_statement(Statement::Store {
-                    pointer: *handle,
-                    value,
-                });
-            }
-            ExpressionHandle::Empty { _ty } => {
-                // we store a empty type (e.g. ()) by doing nothing
-            }
-            ExpressionHandle::Const { value } => {
-                todo!("fixme: assigning a constant");
-            }
-        }
-
-        Ok(())
-    }
-}
-
 impl<T> AsExpression<T> for ExpressionHandle<T> {
     fn as_expression(
         &self,
@@ -159,7 +117,7 @@ impl<T> AsExpression<T> for ExpressionHandle<T> {
     }
 }
 
-pub trait AsExpression<T> {
+pub trait AsExpression<T: ?Sized> {
     fn as_expression(
         &self,
         function_builder: &mut FunctionBuilder,

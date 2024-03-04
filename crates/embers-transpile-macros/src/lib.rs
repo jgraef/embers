@@ -34,7 +34,7 @@ use crate::{
         process_entrypoint,
     },
     global::GlobalVar,
-    structs::impl_ricsl_type_for_struct,
+    structs::impl_shader_type_for_struct,
     traits::{
         process_impl,
         process_trait,
@@ -62,7 +62,7 @@ pub fn derive_shader_type(input: TokenStream) -> TokenStream {
     };
 
     let output = match &input.data {
-        Data::Struct(s) => impl_ricsl_type_for_struct(&opts.ident, s, &opts.args).unwrap(),
+        Data::Struct(s) => impl_shader_type_for_struct(&opts.ident, s, &opts.args).unwrap(),
         Data::Enum(_) => panic!("enum not supported"),
         Data::Union(_) => panic!("union not supported"),
     };

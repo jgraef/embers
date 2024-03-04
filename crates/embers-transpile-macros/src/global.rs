@@ -161,10 +161,7 @@ impl GlobalVar {
                 const NAME: &'static str = #name_lit;
                 const ADDRESS_SPACE: ::embers_transpile::__private::AddressSpace = #address_space_expr;
                 const BINDING: ::embers_transpile::__private::Option<::embers_transpile::__private::naga::ResourceBinding> = #binding_expr;
-
-                fn register_type(module_builder: &mut ::embers_transpile::__private::ModuleBuilder) -> ::embers_transpile::__private::TypeHandle {
-                    module_builder.get_type_by_id_or_add_it::<#ty>()
-                }
+                type Type = #ty;
             }
         };
 

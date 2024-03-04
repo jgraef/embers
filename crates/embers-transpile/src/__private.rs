@@ -1,6 +1,10 @@
 pub use ::naga;
 pub use ::std::{
     self,
+    convert::{
+        From,
+        Into,
+    },
     marker::PhantomData,
     option::Option::{
         self,
@@ -25,17 +29,25 @@ pub use crate::{
             ExpressionHandle,
         },
         function::{
-            Callable,
+            CallGenerator,
+            EntrypointGenerator,
             FunctionBuilder,
-            FunctionGenerator,
+            GenerateCall,
             PhantomReceiver,
+            PhantomReceiverPointer,
         },
         module::{
             Module,
             ModuleBuilder,
         },
-        pointer::AddressSpace,
+        pointer::{
+            AddressSpace,
+            AsPointer,
+            Dereference,
+            Pointer,
+        },
         r#struct::{
+            Field,
             FieldAccess,
             FieldAccessor,
         },

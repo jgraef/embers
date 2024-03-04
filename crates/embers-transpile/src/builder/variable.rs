@@ -59,19 +59,6 @@ impl<T> AsExpression<T> for LetBinding<T> {
     }
 }
 
-impl<T: ShaderType> AsPointer for LetBinding<T> {
-    type Pointer = ExpressionHandle<Pointer<T, { AddressSpace::Function }>>;
-
-    fn as_pointer(
-        &self,
-        function_builder: &mut FunctionBuilder,
-    ) -> Result<Self::Pointer, BuilderError> {
-        // todo: create an abstract pointer. we might need to capture the mut-ness of
-        // pointers, so we can't actually construct a mut-pointer here
-        todo!("LetBinding::into_pointer_expr")
-    }
-}
-
 /// A mutable let binding, represented by a local variable in naga.
 pub struct LetMutBinding<T> {
     handle: Option<naga::Handle<LocalVariable>>,
@@ -141,10 +128,34 @@ impl<T> HasAddressSpace for LetMutBinding<T> {
     const ADDRESS_SPACE: AddressSpace = AddressSpace::Function;
 }
 
-pub trait GlobalVariable {
+pub trait GlobalVariable: 'static {
     const NAME: &'static str;
     const ADDRESS_SPACE: AddressSpace;
     const BINDING: Option<ResourceBinding>;
+    type Type: ShaderType + ?Sized;
+}
 
-    fn register_type(module_builder: &mut ModuleBuilder) -> TypeHandle;
+impl<G: GlobalVariable> AsExpression<Pointer<G::Type, { G::ADDRESS_SPACE }>> for G {
+    fn as_expression(
+        &self,
+        function_builder: &mut FunctionBuilder,
+    ) -> Result<ExpressionHandle<Pointer<G::Type, { G::ADDRESS_SPACE }>>, BuilderError> {
+        let expression_handle = match function_builder
+            .module_builder
+            .get_global_variable_or_add_it::<G>()?
+        {
+            GlobalVariableHandle::Empty => ExpressionHandle::from_empty(),
+            GlobalVariableHandle::Handle(handle) => {
+                function_builder.add_expression(Expression::GlobalVariable(handle))
+            }
+        };
+
+        Ok(expression_handle)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum GlobalVariableHandle {
+    Handle(naga::Handle<naga::GlobalVariable>),
+    Empty,
 }

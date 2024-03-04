@@ -8,6 +8,7 @@ use naga::{
     Arena,
     EntryPoint,
     Function,
+    Handle,
     Type,
     UniqueArena,
 };
@@ -16,13 +17,18 @@ use super::{
     error::BuilderError,
     function::{
         FunctionBuilder,
-        FunctionGenerator,
+        GenerateCall,
+        GenerateFunction,
     },
     r#struct::StructBuilder,
     r#type::{
         ShaderType,
         TypeHandle,
         Width,
+    },
+    variable::{
+        GlobalVariable,
+        GlobalVariableHandle,
     },
 };
 
@@ -38,6 +44,8 @@ pub struct ModuleBuilder {
     pub(super) struct_fields: HashMap<TypeId, Vec<Option<u32>>>,
     pub(super) functions: Arena<Function>,
     entry_points: Vec<EntryPoint>,
+    global_variables: Arena<naga::GlobalVariable>,
+    global_variable_by_type_id: HashMap<TypeId, GlobalVariableHandle>,
 }
 
 impl Default for ModuleBuilder {
@@ -48,6 +56,8 @@ impl Default for ModuleBuilder {
             struct_fields: Default::default(),
             functions: Default::default(),
             entry_points: vec![],
+            global_variables: Default::default(),
+            global_variable_by_type_id: Default::default(),
         }
     }
 }
@@ -87,7 +97,7 @@ impl ModuleBuilder {
         )
     }
 
-    pub fn add_struct<T: 'static>(&mut self, name: impl ToString) -> StructBuilder {
+    pub fn add_struct(&mut self, name: impl ToString) -> StructBuilder {
         StructBuilder::new(self, name)
     }
 
@@ -136,7 +146,9 @@ impl ModuleBuilder {
         ))
     }
 
-    pub fn get_type_by_id_or_add_it<T: ShaderType>(&mut self) -> Result<TypeHandle, BuilderError> {
+    pub fn get_type_by_id_or_add_it<T: ShaderType + ?Sized>(
+        &mut self,
+    ) -> Result<TypeHandle, BuilderError> {
         if let Some(handle) = self.by_type_id.get(&TypeId::of::<T>()) {
             Ok(*handle)
         }
@@ -145,30 +157,64 @@ impl ModuleBuilder {
         }
     }
 
-    pub fn get_func_by_id_or_add_it<F: 'static, G: FunctionGenerator<R>, R: ShaderType>(
+    pub fn get_func_by_id_or_add_it<G: GenerateFunction>(
         &mut self,
-        _f: &F,
-        g: G,
+        gen: &G,
     ) -> Result<TypeHandle, BuilderError> {
-        if let Some(handle) = self.by_type_id.get(&TypeId::of::<F>()) {
+        let type_id = TypeId::of::<G>();
+        if let Some(handle) = self.by_type_id.get(&type_id) {
             Ok(*handle)
         }
         else {
-            let mut function_builder = FunctionBuilder::new::<F>(self);
-            g.generate(&mut function_builder)?;
-            Ok(function_builder.build()?)
+            let mut function_builder = FunctionBuilder::new::<G>(self);
+            gen.generate(&mut function_builder)?;
+            let handle = function_builder.build()?;
+            self.by_type_id.insert(type_id, handle);
+            Ok(handle)
         }
     }
 
-    pub fn add_entrypoint<G: FunctionGenerator<()>>(&mut self, gen: G) -> Result<(), BuilderError> {
-        struct Entrypoint<T: 'static>(PhantomData<T>);
-
-        let mut function_builder = FunctionBuilder::new::<Entrypoint<G>>(self);
+    pub fn add_entrypoint<G: GenerateFunction>(&mut self, gen: G) -> Result<(), BuilderError> {
+        let mut function_builder = FunctionBuilder::new::<G>(self);
         gen.generate(&mut function_builder)?;
         let entry_point = function_builder.build_entrypoint();
         self.entry_points.push(entry_point);
 
         Ok(())
+    }
+
+    pub fn get_global_variable_or_add_it<G: GlobalVariable>(
+        &mut self,
+    ) -> Result<GlobalVariableHandle, BuilderError> {
+        let type_id = TypeId::of::<G>();
+        if let Some(handle) = self.global_variable_by_type_id.get(&type_id) {
+            Ok(*handle)
+        }
+        else {
+            let ty = self.get_type_by_id_or_add_it::<G::Type>()?;
+
+            let handle = match ty {
+                TypeHandle::Empty => GlobalVariableHandle::Empty,
+                TypeHandle::Func(_) => return Err(BuilderError::NotANagaType { ty }),
+                TypeHandle::Type(ty) => {
+                    let handle = self.global_variables.append(
+                        naga::GlobalVariable {
+                            name: Some(G::NAME.to_owned()),
+                            space: G::ADDRESS_SPACE.into(),
+                            binding: G::BINDING,
+                            ty,
+                            init: None,
+                        },
+                        Default::default(),
+                    );
+                    GlobalVariableHandle::Handle(handle)
+                }
+            };
+
+            self.global_variable_by_type_id.insert(type_id, handle);
+
+            Ok(handle)
+        }
     }
 
     pub fn build(self) -> Module {

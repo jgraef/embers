@@ -65,3 +65,9 @@ impl TypeHandle {
         matches!(self, Self::Empty)
     }
 }
+
+#[derive(Clone, Copy, Debug)]
+pub enum Mutability {
+    Immutable,
+    Mutable,
+}

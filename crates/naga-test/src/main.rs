@@ -1,6 +1,11 @@
+#![feature(arbitrary_self_types)]
+
 mod scratch;
 
-use std::marker::PhantomData;
+use std::{
+    fmt::Debug,
+    marker::PhantomData,
+};
 
 use color_eyre::eyre::Error;
 use embers_transpile::{
@@ -8,6 +13,7 @@ use embers_transpile::{
     transpile,
     ShaderType,
 };
+use itertools::Itertools;
 use naga::Module;
 use owo_colors::{
     AnsiColors,
@@ -72,20 +78,75 @@ fn diff_modules(mut wgsl: Module, ricsl: Module) {
     }
 }
 
-#[transpile]
-fn bar(x: i32, y: i32) -> i32 {
-    x + y
+fn print_side_by_side(left: &impl Debug, right: &impl Debug) {
+    fn to_lines(x: &impl Debug, w: usize) -> Vec<String> {
+        let text = format!("{x:#?}");
+        textwrap::wrap(&text, w)
+            .into_iter()
+            .map(|s| s.into_owned())
+            .collect()
+    }
+
+    let (width, _) = termion::terminal_size().unwrap();
+    let text_width = width as usize / 2 - 2;
+
+    let left = to_lines(left, text_width);
+    let right = to_lines(right, text_width);
+
+    for item in left.iter().zip_longest(right.iter()) {
+        let (left, right) = item.left_and_right();
+        let left = left.map(|s| s.as_str()).unwrap_or_default();
+        let right = right.map(|s| s.as_str()).unwrap_or_default();
+        assert!(left.len() <= text_width);
+        print!("{}", left);
+        for _ in 0..text_width - left.len() {
+            print!(" ");
+        }
+        print!(" | ");
+        println!("{}", right);
+    }
 }
 
-#[transpile(entrypoint)]
-fn foo() {
-    let z = bar(1, 2);
-}
+mod shader {
+    use embers_transpile::{
+        global,
+        transpile,
+        ShaderType,
+    };
 
-//global! {
-//    #[embers(group = 0, binding = 0, address_space(storage(write)))]
-//    static parameters: [i32];
-//}
+    global! {
+        #[embers(group = 0, binding = 0, address_space(storage(write)))]
+        static parameters: [i32];
+    }
+
+    #[transpile]
+    fn bar(x: i32, y: i32) -> i32 {
+        x + y
+    }
+
+    #[derive(ShaderType)]
+    struct Foo(i32);
+
+    #[transpile]
+    impl Foo {
+        pub fn bar(&self) -> i32 {
+            (*self).0
+        }
+    }
+
+    #[transpile(entrypoint)]
+    pub fn foo() {
+        //let mut a = 0;
+        //let b = &a;
+        //let c = *b;
+        //let z = bar(1, 2);
+        //let x = parameters[0];
+        //return;
+
+        //let foo = Foo { 0: 42 };
+        //let x = foo.bar();
+    }
+}
 
 fn main() -> Result<(), Error> {
     dotenvy::dotenv().ok();
@@ -96,25 +157,42 @@ fn main() -> Result<(), Error> {
     //println!("{:?}", Foo);
 
     let wgsl = r#"
-    @group(0)
-    @binding(0)
-    var<storage, read> parameters: array<i32>;    
+    //@group(0)
+    //@binding(0)
+    //var<storage, read> readable: array<i32>;
+    //@group(0)
+    //@binding(1)
+    //var<storage, read> writable: array<i32>;
+
+    struct Foo {
+        x: u32,
+    }
+
+    fn bar(_self: ptr<private, Foo>) -> i32 {
+        return (*_self).x;
+    }
 
     @compute
     @workgroup_size(64, 1, 1)
     fn foo() {
+        //let x = parameters[0];
+        //writable[0] = 1;
+        //var a = 0;
+        //let b = &a;
+        //let c = *b;
+        let foo = Foo(42);
+        let x = bar(&foo);
     }
     "#;
 
     let wgsl = naga::front::wgsl::parse_str(wgsl)?;
     //println!("{wgsl:#?}");
 
-    //let ricsl = foo()?;
-    //print_module("ricsl", &module.naga);
+    let transpiled = shader::foo()?;
+    //println!("{:#?}", transpiled.naga);
 
+    print_side_by_side(&wgsl, &transpiled.naga);
     //diff_modules(wgsl, ricsl.naga);
-
-    print!("{:#?}", wgsl);
 
     Ok(())
 }

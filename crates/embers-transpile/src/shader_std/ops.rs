@@ -27,7 +27,7 @@ macro_rules! binary_trait {
 macro_rules! binary_assign_trait {
     ($name:ident, $method:ident) => {
         #[transpile]
-        pub trait $name<Rhs: Sized = Self>: ShaderType + Sized {
+        pub trait $name<Rhs: Sized = Self>: ShaderType {
             fn $method(&mut self, rhs: Rhs);
         }
     };
@@ -57,3 +57,10 @@ binary_assign_trait!(BitOrAssign, bitor_assign);
 binary_assign_trait!(BitXorAssign, bitxor_assign);
 binary_assign_trait!(ShlAssign, shl_assign);
 binary_assign_trait!(ShrAssign, shr_assign);
+
+#[transpile]
+pub trait Index<Idx: ShaderType + ?Sized>: ShaderType {
+    type Output: ShaderType;
+
+    fn index(self, index: Idx) -> Self::Output;
+}
