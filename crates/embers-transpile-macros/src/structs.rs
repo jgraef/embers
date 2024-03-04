@@ -32,7 +32,7 @@ pub fn impl_ricsl_type_for_struct(
                 let field_name_literal = ident_to_literal(field.ident.as_ref().unwrap());
                 let field_type = &field.ty;
                 struct_fields.push(
-                    quote! { struct_builder.add_named_field::<#field_type>(#field_name_literal); },
+                    quote! { struct_builder.add_named_field::<#field_type>(#field_name_literal)?; },
                 );
                 let field_access_impl = quote! {
                     const INDEX: usize = #i;
@@ -53,7 +53,7 @@ pub fn impl_ricsl_type_for_struct(
         Fields::Unnamed(unnamed) => {
             for (i, field) in unnamed.unnamed.iter().enumerate() {
                 let field_type = &field.ty;
-                struct_fields.push(quote! { struct_builder.add_unnamed_field::<#field_type>(); });
+                struct_fields.push(quote! { struct_builder.add_unnamed_field::<#field_type>()?; });
                 accessor_impls.push(
                     quote! {
                         impl ::embers_transpile::__private::FieldAccess<{ ::embers_transpile::__private::FieldAccessor::Unnamed(#i) }> for #ident {
@@ -68,10 +68,10 @@ pub fn impl_ricsl_type_for_struct(
 
     let generated = quote! {
         impl ::embers_transpile::__private::ShaderType for #ident {
-            fn add_to_module(module_builder: &mut ::embers_transpile::__private::ModuleBuilder) -> ::embers_transpile::__private::TypeHandle {
-                let mut struct_builder = module_builder.add_struct::<Self>(#ident_literal);
+            fn add_to_module(module_builder: &mut ::embers_transpile::__private::ModuleBuilder) -> ::embers_transpile::__private::Result<::embers_transpile::__private::TypeHandle, ::embers_transpile::__private::BuilderError> {
+                let mut struct_builder = module_builder.add_struct::<Self>(#ident_literal)?;
                 #(#struct_fields)*
-                struct_builder.build()
+                ::embers_transpile::__private::Ok(struct_builder.build())
             }
         }
         #(#accessor_impls)*

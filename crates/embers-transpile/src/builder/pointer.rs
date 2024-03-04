@@ -55,13 +55,15 @@ pub struct Pointer<T: ShaderType, const A: AddressSpace> {
 }
 
 impl<T: ShaderType, const A: AddressSpace> ShaderType for Pointer<T, A> {
-    fn add_to_module(module_builder: &mut ModuleBuilder) -> TypeHandle {
-        let base = module_builder.get_type_by_id_or_add_it::<T>();
-        let base = base
-            .get_type()
-            .expect("fixme: pointer base is not a naga type");
+    fn add_to_module(module_builder: &mut ModuleBuilder) -> Result<TypeHandle, BuilderError> {
+        let ty = module_builder.get_type_by_id_or_add_it::<T>()?;
+        let base = match ty {
+            TypeHandle::Empty => return Ok(TypeHandle::Empty),
+            TypeHandle::Func(_) => return Err(BuilderError::NotANagaType { ty }),
+            TypeHandle::Type(ty) => ty,
+        };
         let space = A.into();
-        module_builder.add_intrinsic_type::<Self>(None, naga::TypeInner::Pointer { base, space })
+        Ok(module_builder.add_type::<Self>(None, naga::TypeInner::Pointer { base, space }))
     }
 }
 

@@ -5,8 +5,8 @@ use crate::ShaderType;
 macro_rules! unary_trait {
     ($name:ident, $method:ident) => {
         #[transpile]
-        pub trait $name: ShaderType {
-            type Output: ShaderType;
+        pub trait $name: ShaderType + Sized {
+            type Output: ShaderType + Sized;
 
             fn $method(self) -> Self::Output;
         }
@@ -16,8 +16,8 @@ macro_rules! unary_trait {
 macro_rules! binary_trait {
     ($name:ident, $method:ident) => {
         #[transpile]
-        pub trait $name<Rhs = Self>: ShaderType {
-            type Output: ShaderType;
+        pub trait $name<Rhs: Sized = Self>: ShaderType + Sized {
+            type Output: ShaderType + Sized;
 
             fn $method(self, rhs: Rhs) -> Self::Output;
         }
@@ -27,7 +27,7 @@ macro_rules! binary_trait {
 macro_rules! binary_assign_trait {
     ($name:ident, $method:ident) => {
         #[transpile]
-        pub trait $name<Rhs = Self>: ShaderType {
+        pub trait $name<Rhs: Sized = Self>: ShaderType + Sized {
             fn $method(&mut self, rhs: Rhs);
         }
     };

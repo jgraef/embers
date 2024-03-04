@@ -1,24 +1,28 @@
 use crate::{
     builder::{
         module::ModuleBuilder,
-        r#type::TypeHandle,
+        r#type::{
+            TypeHandle,
+            Width,
+        },
     },
     transpile,
     ShaderType,
+    __private::BuilderError,
 };
 
 macro_rules! impl_primitive {
     ($ty:ident, $kind:ident, $width:expr) => {
         impl ShaderType for $ty {
-            fn add_to_module(module_builder: &mut ModuleBuilder) -> TypeHandle {
-                module_builder.add_intrinsic_type::<Self>(
-                    None, // note: naga doesn't name these
-                    naga::TypeInner::Scalar(naga::Scalar {
-                        kind: naga::ScalarKind::$kind,
-                        width: $width,
-                    }),
-                )
+            fn add_to_module(
+                module_builder: &mut ModuleBuilder,
+            ) -> Result<TypeHandle, BuilderError> {
+                Ok(module_builder.add_scalar::<Self>(naga::ScalarKind::$kind))
             }
+        }
+
+        impl Width for $ty {
+            const WIDTH: usize = $width;
         }
     };
 }
@@ -30,7 +34,7 @@ macro_rules! impl_unary {
             type Output = Self;
 
             fn $method(self) -> Self::Output {
-                embers_transpile_intrinsic! {
+                ::embers_transpile::__private::intrinsic! {
                     let expr = crate::__private::AsExpression::as_expression(&_self, function_builder)?.try_get_handle()?;
                     function_builder.add_expression::<$ty>(crate::__private::naga::Expression::Unary {
                         op: crate::__private::naga::UnaryOperator::$op,
@@ -49,7 +53,7 @@ macro_rules! impl_binary {
             type Output = $ty;
 
             fn $method(self, rhs: $ty) -> Self::Output {
-                embers_transpile_intrinsic! {
+                ::embers_transpile::__private::intrinsic! {
                     let left = crate::__private::AsExpression::as_expression(&_self, function_builder)?.try_get_handle()?;
                     let right = crate::__private::AsExpression::as_expression(&rhs, function_builder)?.try_get_handle()?;
                     function_builder.add_expression::<$ty>(crate::__private::naga::Expression::Binary {
@@ -61,12 +65,6 @@ macro_rules! impl_binary {
             }
         }
     };
-}
-
-impl ShaderType for () {
-    fn add_to_module(_module_builder: &mut ModuleBuilder) -> TypeHandle {
-        TypeHandle::Empty
-    }
 }
 
 macro_rules! impl_scalar {
@@ -108,3 +106,29 @@ impl_primitive!(bool, Bool, 1);
 impl_unary!(bool, Not, not, LogicalNot);
 impl_binary!(bool, BitAnd, bitand, LogicalAnd);
 impl_binary!(bool, BitOr, bitor, LogicalOr);
+
+impl ShaderType for () {
+    fn add_to_module(module_builder: &mut ModuleBuilder) -> Result<TypeHandle, BuilderError> {
+        Ok(module_builder.add_empty_type::<Self>())
+    }
+}
+
+impl Width for () {
+    const WIDTH: usize = 0;
+}
+
+impl<T: ShaderType + Width> ShaderType for [T] {
+    fn add_to_module(module_builder: &mut ModuleBuilder) -> Result<TypeHandle, BuilderError> {
+        module_builder.add_dynamic_array::<T>()
+    }
+}
+
+impl<T: ShaderType + Width, const N: usize> ShaderType for [T; N] {
+    fn add_to_module(module_builder: &mut ModuleBuilder) -> Result<TypeHandle, BuilderError> {
+        module_builder.add_sized_array::<T, N>()
+    }
+}
+
+impl<T: ShaderType + Width, const N: usize> Width for [T; N] {
+    const WIDTH: usize = T::WIDTH * N;
+}

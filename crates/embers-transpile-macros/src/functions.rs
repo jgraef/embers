@@ -232,12 +232,12 @@ pub fn process_entrypoint(input: &ItemFn, args: &FnArgs) -> Result<TokenStream, 
 
                         let var = &pat_ident.ident;
                         output.push(quote! {
-                            let #var = _function_builder.add_input_named::<#ty>(#name, #is_mut, _binding);
+                            let #var = _function_builder.add_input_named::<#ty>(#name, #is_mut, _binding)?;
                         });
                     }
                     syn::Pat::Wild(_) => {
                         output.push(quote! {
-                            _function_builder.add_input_wild::<#ty>();
+                            _function_builder.add_input_wild::<#ty>()?;
                         });
                     }
                     _ => panic!("unsupported"),
@@ -299,7 +299,7 @@ fn process_function(
             FnArg::Receiver(receiver) => {
                 assert!(receiver.colon_token.is_none());
                 let ty = &receiver.ty;
-                output.push(quote! { let _self = _function_builder.add_input_receiver::<#ty>(); });
+                output.push(quote! { let _self = _function_builder.add_input_receiver::<#ty>()?; });
             }
             FnArg::Typed(pat_type) => {
                 let ty = &pat_type.ty;
@@ -314,12 +314,12 @@ fn process_function(
 
                         let var = &pat_ident.ident;
                         output.push(quote! {
-                            let #var = _function_builder.add_input_named::<#ty>(#name, #is_mut, None);
+                            let #var = _function_builder.add_input_named::<#ty>(#name, #is_mut, None)?;
                         });
                     }
                     syn::Pat::Wild(_) => {
                         output.push(quote! {
-                            _function_builder.add_input_wild::<#ty>();
+                            _function_builder.add_input_wild::<#ty>()?;
                         });
                     }
                     _ => panic!("unsupported"),
@@ -331,7 +331,7 @@ fn process_function(
     match &sig.output {
         ReturnType::Type(_, ty) => {
             output.push(quote! {
-                _function_builder.add_output::<#ty>();
+                _function_builder.add_output::<#ty>()?;
             });
         }
         _ => {}
@@ -547,7 +547,24 @@ fn process_macro(
     let path = &macro_.path;
     let var = name_gen.tmp_var("macro");
 
-    if path.is_ident("embers_transpile_intrinsic") {
+    fn is_intrinsic(path: &Path) -> bool {
+        if path.leading_colon.is_none() {
+            return false;
+        }
+
+        let mut it = path.segments.iter();
+        let mut matches = |s| {
+            it.next()
+                .map(|seg| seg.ident.to_string() == s)
+                .unwrap_or_default()
+        };
+        matches("embers_transpile")
+            && matches("__private")
+            && matches("intrinsic")
+            && it.next().is_none()
+    }
+
+    if is_intrinsic(&macro_.path) {
         let tokens = &macro_.tokens;
         output.push(quote! {
             let #var = {

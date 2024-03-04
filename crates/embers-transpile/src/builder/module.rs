@@ -22,6 +22,7 @@ use super::{
     r#type::{
         ShaderType,
         TypeHandle,
+        Width,
     },
 };
 
@@ -52,18 +53,14 @@ impl Default for ModuleBuilder {
 }
 
 impl ModuleBuilder {
-    pub fn add_struct<T: 'static>(&mut self, name: impl ToString) -> StructBuilder {
-        StructBuilder::new::<T>(self, name)
-    }
-
-    pub(crate) fn add_intrinsic_type<T: 'static>(
+    pub fn add_type<T: 'static + ?Sized>(
         &mut self,
-        name: Option<&str>,
+        name: Option<String>,
         naga_type_inner: naga::TypeInner,
     ) -> TypeHandle {
         let handle = self.types.insert(
             naga::Type {
-                name: name.map(|n| n.to_owned()),
+                name,
                 inner: naga_type_inner,
             },
             naga::Span::default(),
@@ -75,9 +72,73 @@ impl ModuleBuilder {
         handle.into()
     }
 
-    pub fn get_type_by_id_or_add_it<T: ShaderType>(&mut self) -> TypeHandle {
+    pub fn add_empty_type<T: 'static>(&mut self) -> TypeHandle {
+        self.by_type_id.insert(TypeId::of::<T>(), TypeHandle::Empty);
+        TypeHandle::Empty
+    }
+
+    pub fn add_scalar<T: ShaderType + Width>(&mut self, kind: naga::ScalarKind) -> TypeHandle {
+        self.add_type::<T>(
+            None,
+            naga::TypeInner::Scalar(naga::Scalar {
+                kind,
+                width: T::WIDTH as u8,
+            }),
+        )
+    }
+
+    pub fn add_struct<T: 'static>(&mut self, name: impl ToString) -> StructBuilder {
+        StructBuilder::new(self, name)
+    }
+
+    pub fn add_dynamic_array<T: ShaderType + Width>(&mut self) -> Result<TypeHandle, BuilderError> {
+        // todo: add traits for naga::valid::TypeFlags and add Sized as trait bound here
+
+        let ty = self.get_type_by_id_or_add_it::<T>()?;
+        let base = match ty {
+            TypeHandle::Empty => return Ok(self.add_empty_type::<T>()),
+            TypeHandle::Func(_) => return Err(BuilderError::NotANagaType { ty }),
+            TypeHandle::Type(ty) => ty,
+        };
+
+        Ok(self.add_type::<[T]>(
+            None,
+            naga::TypeInner::Array {
+                base,
+                size: naga::ArraySize::Dynamic,
+                stride: <T as Width>::WIDTH as u32,
+            },
+        ))
+    }
+
+    pub fn add_sized_array<T: ShaderType + Width, const N: usize>(
+        &mut self,
+    ) -> Result<TypeHandle, BuilderError> {
+        if N == 0 {
+            return Ok(TypeHandle::Empty);
+        }
+        let n = u32::try_from(N).map_err(|_| BuilderError::Invalid)?;
+
+        let ty = self.get_type_by_id_or_add_it::<T>()?;
+        let base = match ty {
+            TypeHandle::Empty => return Ok(self.add_empty_type::<T>()),
+            TypeHandle::Func(_) => return Err(BuilderError::NotANagaType { ty }),
+            TypeHandle::Type(ty) => ty,
+        };
+
+        Ok(self.add_type::<[T; N]>(
+            None,
+            naga::TypeInner::Array {
+                base,
+                size: naga::ArraySize::Constant(n.try_into().unwrap()),
+                stride: <T as Width>::WIDTH as u32,
+            },
+        ))
+    }
+
+    pub fn get_type_by_id_or_add_it<T: ShaderType>(&mut self) -> Result<TypeHandle, BuilderError> {
         if let Some(handle) = self.by_type_id.get(&TypeId::of::<T>()) {
-            *handle
+            Ok(*handle)
         }
         else {
             T::add_to_module(self)

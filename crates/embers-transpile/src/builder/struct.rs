@@ -52,7 +52,6 @@ struct StructField {
 
 pub struct StructBuilder<'a> {
     module_builder: &'a mut ModuleBuilder,
-    type_id: TypeId,
     name: String,
     fields: Vec<StructField>,
     field_index: u32,
@@ -60,10 +59,9 @@ pub struct StructBuilder<'a> {
 }
 
 impl<'a> StructBuilder<'a> {
-    pub fn new<T: 'static>(module_builder: &'a mut ModuleBuilder, name: impl ToString) -> Self {
+    pub fn new(module_builder: &'a mut ModuleBuilder, name: impl ToString) -> Self {
         Self {
             module_builder,
-            type_id: TypeId::of::<T>(),
             name: name.to_string(),
             fields: vec![],
             field_index: 0,
@@ -79,8 +77,8 @@ impl<'a> StructBuilder<'a> {
         self.add_field::<T>(None);
     }
 
-    pub fn add_field<T: ShaderType>(&mut self, name: Option<String>) {
-        let field_type = self.module_builder.get_type_by_id_or_add_it::<T>();
+    pub fn add_field<T: ShaderType>(&mut self, name: Option<String>) -> Result<(), BuilderError> {
+        let field_type = self.module_builder.get_type_by_id_or_add_it::<T>()?;
         if let Some(ty) = field_type.get_type() {
             self.fields.push(StructField {
                 name: name.clone(),
@@ -92,9 +90,10 @@ impl<'a> StructBuilder<'a> {
         else {
             self.field_map.push(None);
         }
+        Ok(())
     }
 
-    pub fn build(self) -> TypeHandle {
+    pub fn build<T: ShaderType>(self) -> TypeHandle {
         let members = self
             .fields
             .into_iter()
@@ -109,28 +108,21 @@ impl<'a> StructBuilder<'a> {
             .collect::<Vec<_>>();
 
         let handle = if members.is_empty() {
-            TypeHandle::Empty
+            self.module_builder.add_empty_type::<T>()
         }
         else {
             self.module_builder
                 .struct_fields
-                .insert(self.type_id, self.field_map);
+                .insert(TypeId::of::<T>(), self.field_map);
 
-            let handle = self.module_builder.types.insert(
-                naga::Type {
-                    name: Some(self.name.clone()),
-                    inner: naga::TypeInner::Struct {
-                        members,
-                        span: 0, // todo
-                    },
+            self.module_builder.add_type::<T>(
+                Some(self.name),
+                naga::TypeInner::Struct {
+                    members,
+                    span: 0, // todo
                 },
-                Span::default(),
-            );
-
-            TypeHandle::Type(handle)
+            )
         };
-
-        self.module_builder.by_type_id.insert(self.type_id, handle);
 
         handle
     }

@@ -20,15 +20,11 @@ use syn::{
     Data,
     DeriveInput,
     Item,
-    ItemStatic,
-    Local,
-    Stmt,
 };
 
 use crate::{
     args::{
         FnArgs,
-        GlobalArgs,
         ImplArgs,
         StructArgs,
         TraitArgs,
@@ -137,7 +133,7 @@ pub fn global(input: TokenStream) -> TokenStream {
     let global = parse_macro_input!(input as GlobalVar);
     let output = global.process().unwrap();
 
-    println!("{output}");
+    //println!("{output}");
 
     output.into()
 }

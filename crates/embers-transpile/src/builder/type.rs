@@ -9,8 +9,12 @@ use super::{
     module::ModuleBuilder,
 };
 
-pub trait ShaderType: Sized + 'static {
-    fn add_to_module(module_builder: &mut ModuleBuilder) -> TypeHandle;
+pub trait ShaderType: 'static {
+    fn add_to_module(module_builder: &mut ModuleBuilder) -> Result<TypeHandle, BuilderError>;
+}
+
+pub trait Width {
+    const WIDTH: usize;
 }
 
 #[derive(Copy, Clone, Debug)]

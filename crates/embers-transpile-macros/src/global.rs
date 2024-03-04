@@ -22,7 +22,6 @@ use syn::{
 };
 
 use crate::{
-    args::GlobalArgs,
     error::Error,
     utils::ident_to_literal,
 };

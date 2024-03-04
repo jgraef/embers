@@ -134,10 +134,12 @@ impl<'a> FunctionBuilder<'a> {
         self.name = Some(name.to_string());
     }
 
-    pub fn add_input_receiver<This: ShaderType>(&mut self) -> FnInputBinding<This> {
+    pub fn add_input_receiver<This: ShaderType>(
+        &mut self,
+    ) -> Result<FnInputBinding<This>, BuilderError> {
         assert!(self.inputs.is_empty());
 
-        let ty = self.module_builder.get_type_by_id_or_add_it::<This>();
+        let ty = self.module_builder.get_type_by_id_or_add_it::<This>()?;
         self.receiver = Some(ty);
 
         if let Some(naga_ty) = ty.get_type() {
@@ -147,10 +149,10 @@ impl<'a> FunctionBuilder<'a> {
                 binding: None,
             });
 
-            FnInputBinding::new(0, false)
+            Ok(FnInputBinding::new(0, false))
         }
         else {
-            FnInputBinding::phantom(false)
+            Ok(FnInputBinding::empty(false))
         }
     }
 
@@ -159,8 +161,8 @@ impl<'a> FunctionBuilder<'a> {
         ident: impl ToString,
         is_mut: bool,
         binding: Option<Binding>,
-    ) -> FnInputBinding<T> {
-        let ty = self.module_builder.get_type_by_id_or_add_it::<T>();
+    ) -> Result<FnInputBinding<T>, BuilderError> {
+        let ty = self.module_builder.get_type_by_id_or_add_it::<T>()?;
         if let Some(naga_ty) = ty.get_type() {
             self.inputs.push(FunctionArgument {
                 ty: naga_ty,
@@ -168,20 +170,21 @@ impl<'a> FunctionBuilder<'a> {
                 binding,
             });
             let i = self.inputs.len();
-            FnInputBinding::new(i, is_mut)
+            Ok(FnInputBinding::new(i, is_mut))
         }
         else {
-            FnInputBinding::phantom(is_mut)
+            Ok(FnInputBinding::empty(is_mut))
         }
     }
 
     pub fn add_input_wild<T: ShaderType>(&mut self) -> FnInputBinding<T> {
-        FnInputBinding::phantom(false)
+        FnInputBinding::empty(false)
     }
 
-    pub fn add_output<T: ShaderType>(&mut self) {
-        let ty = self.module_builder.get_type_by_id_or_add_it::<T>();
+    pub fn add_output<T: ShaderType>(&mut self) -> Result<(), BuilderError> {
+        let ty = self.module_builder.get_type_by_id_or_add_it::<T>()?;
         self.output = ty;
+        Ok(())
     }
 
     pub fn add_expression<T>(&mut self, expr: Expression) -> ExpressionHandle<T> {
@@ -208,7 +211,7 @@ impl<'a> FunctionBuilder<'a> {
         let type_handle = self.module_builder.get_func_by_id_or_add_it(f, gen)?;
         let naga_fun = type_handle.try_get_func()?;
 
-        let ret_type = self.module_builder.get_type_by_id_or_add_it::<R>();
+        let ret_type = self.module_builder.get_type_by_id_or_add_it::<R>()?;
 
         let ret = if ret_type.is_empty() {
             ExpressionHandle::<R>::from_empty()
@@ -236,7 +239,7 @@ impl<'a> FunctionBuilder<'a> {
         name: impl ToString,
         init: Option<ExpressionHandle<T>>,
     ) -> Result<LetMutBinding<T>, BuilderError> {
-        let ty = self.module_builder.get_type_by_id_or_add_it::<T>();
+        let ty = self.module_builder.get_type_by_id_or_add_it::<T>()?;
         let let_mut = if ty.is_empty() {
             LetMutBinding::from_empty()
         }
@@ -340,7 +343,7 @@ impl<T> FnInputBinding<T> {
         }
     }
 
-    pub fn phantom(is_mut: bool) -> Self {
+    pub fn empty(is_mut: bool) -> Self {
         Self {
             index: None,
             is_mut,
