@@ -1,14 +1,12 @@
 use std::{
     any::TypeId,
     collections::HashMap,
-    marker::PhantomData,
 };
 
 use naga::{
     Arena,
     EntryPoint,
     Function,
-    Handle,
     Type,
     UniqueArena,
 };
@@ -17,7 +15,6 @@ use super::{
     error::BuilderError,
     function::{
         FunctionBuilder,
-        GenerateCall,
         GenerateFunction,
     },
     r#struct::StructBuilder,
@@ -74,17 +71,18 @@ impl ModuleBuilder {
                 inner: naga_type_inner,
             },
             naga::Span::default(),
-        );
+        ).into();
 
         self.by_type_id
-            .insert(TypeId::of::<T>(), TypeHandle::Type(handle));
+            .insert(TypeId::of::<T>(), handle);
 
-        handle.into()
+        handle
     }
 
     pub fn add_empty_type<T: 'static>(&mut self) -> TypeHandle {
-        self.by_type_id.insert(TypeId::of::<T>(), TypeHandle::Empty);
-        TypeHandle::Empty
+        let ty = TypeHandle::default();
+        self.by_type_id.insert(TypeId::of::<T>(), ty);
+        ty
     }
 
     pub fn add_scalar<T: ShaderType + Width>(&mut self, kind: naga::ScalarKind) -> TypeHandle {
@@ -104,13 +102,9 @@ impl ModuleBuilder {
     pub fn add_dynamic_array<T: ShaderType + Width>(&mut self) -> Result<TypeHandle, BuilderError> {
         // todo: add traits for naga::valid::TypeFlags and add Sized as trait bound here
 
-        let ty = self.get_type_by_id_or_add_it::<T>()?;
-        let base = match ty {
-            TypeHandle::Empty => return Ok(self.add_empty_type::<T>()),
-            TypeHandle::Func(_) => return Err(BuilderError::NotANagaType { ty }),
-            TypeHandle::Type(ty) => ty,
-        };
-
+        let base = self.get_type_by_id_or_add_it::<T>()?;
+        let Some(base) = base.get_data() else { return Ok(self.add_empty_type::<T>()); };
+        
         Ok(self.add_type::<[T]>(
             None,
             naga::TypeInner::Array {
@@ -125,16 +119,12 @@ impl ModuleBuilder {
         &mut self,
     ) -> Result<TypeHandle, BuilderError> {
         if N == 0 {
-            return Ok(TypeHandle::Empty);
+            return Ok(self.add_empty_type::<T>());
         }
         let n = u32::try_from(N).map_err(|_| BuilderError::Invalid)?;
 
-        let ty = self.get_type_by_id_or_add_it::<T>()?;
-        let base = match ty {
-            TypeHandle::Empty => return Ok(self.add_empty_type::<T>()),
-            TypeHandle::Func(_) => return Err(BuilderError::NotANagaType { ty }),
-            TypeHandle::Type(ty) => ty,
-        };
+        let base = self.get_type_by_id_or_add_it::<T>()?;
+        let Some(base) = base.get_data() else { return Ok(self.add_empty_type::<T>()); };
 
         Ok(self.add_type::<[T; N]>(
             None,
@@ -193,22 +183,21 @@ impl ModuleBuilder {
         else {
             let ty = self.get_type_by_id_or_add_it::<G::Type>()?;
 
-            let handle = match ty {
-                TypeHandle::Empty => GlobalVariableHandle::Empty,
-                TypeHandle::Func(_) => return Err(BuilderError::NotANagaType { ty }),
-                TypeHandle::Type(ty) => {
-                    let handle = self.global_variables.append(
-                        naga::GlobalVariable {
-                            name: Some(G::NAME.to_owned()),
-                            space: G::ADDRESS_SPACE.into(),
-                            binding: G::BINDING,
-                            ty,
-                            init: None,
-                        },
-                        Default::default(),
-                    );
-                    GlobalVariableHandle::Handle(handle)
-                }
+            let handle = if let Some(ty) = ty.get_data() {
+                let handle = self.global_variables.append(
+                    naga::GlobalVariable {
+                        name: Some(G::NAME.to_owned()),
+                        space: G::ADDRESS_SPACE.into(),
+                        binding: G::BINDING,
+                        ty,
+                        init: None,
+                    },
+                    Default::default(),
+                );
+                GlobalVariableHandle::Handle(handle)
+            }
+            else {
+                GlobalVariableHandle::Empty
             };
 
             self.global_variable_by_type_id.insert(type_id, handle);

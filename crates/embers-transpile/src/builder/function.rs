@@ -142,11 +142,11 @@ impl<T: ?Sized> AsExpression<T> for PhantomReceiver<T> {
     }
 }
 
-pub struct PhantomReceiverPointer<T: ?Sized, const ADDRESS_SPACE: AddressSpace> {
-    _ty: PhantomData<T>,
+pub struct PhantomReceiverPointer<T: ShaderType + ?Sized, const ADDRESS_SPACE: AddressSpace> {
+    handle: ExpressionHandle<Pointer<T, { ADDRESS_SPACE }>>,
 }
 
-impl<T: ?Sized, const ADDRESS_SPACE: AddressSpace> std::ops::Deref
+impl<T: ShaderType + ?Sized, const ADDRESS_SPACE: AddressSpace> std::ops::Deref
     for PhantomReceiverPointer<T, ADDRESS_SPACE>
 {
     type Target = T;
@@ -160,8 +160,17 @@ impl<T: ShaderType + ?Sized, const ADDRESS_SPACE: AddressSpace>
     From<ExpressionHandle<Pointer<T, { ADDRESS_SPACE }>>>
     for PhantomReceiverPointer<T, { ADDRESS_SPACE }>
 {
-    fn from(_handle: ExpressionHandle<Pointer<T, { ADDRESS_SPACE }>>) -> Self {
-        Self { _ty: PhantomData }
+    fn from(handle: ExpressionHandle<Pointer<T, { ADDRESS_SPACE }>>) -> Self {
+        Self { handle }
+    }
+}
+
+impl<T: ShaderType + ?Sized, const ADDRESS_SPACE: AddressSpace> AsExpression<Pointer<T, { ADDRESS_SPACE }>> for PhantomReceiverPointer<T, { ADDRESS_SPACE }> {
+    fn as_expression(
+        &self,
+        _function_builder: &mut FunctionBuilder,
+    ) -> Result<ExpressionHandle<Pointer<T, { ADDRESS_SPACE }>>, BuilderError> {
+        Ok(self.handle.clone())
     }
 }
 
@@ -186,7 +195,7 @@ impl<'a> FunctionBuilder<'a> {
             name: None,
             type_id: TypeId::of::<F>(),
             inputs: vec![],
-            output: TypeHandle::Empty,
+            output: TypeHandle::default(),
             expressions: Default::default(),
             named_expressions: Default::default(),
             statements: vec![],
@@ -206,7 +215,7 @@ impl<'a> FunctionBuilder<'a> {
         let ty = self.module_builder.get_type_by_id_or_add_it::<This>()?;
         self.receiver = Some(ty);
 
-        if let Some(naga_ty) = ty.get_type() {
+        if let Some(naga_ty) = ty.get_data() {
             self.inputs.push(FunctionArgument {
                 name: Some("self".to_owned()),
                 ty: naga_ty,
@@ -227,7 +236,7 @@ impl<'a> FunctionBuilder<'a> {
         binding: Option<Binding>,
     ) -> Result<FnInputBinding<T>, BuilderError> {
         let ty = self.module_builder.get_type_by_id_or_add_it::<T>()?;
-        if let Some(naga_ty) = ty.get_type() {
+        if let Some(naga_ty) = ty.get_data() {
             self.inputs.push(FunctionArgument {
                 ty: naga_ty,
                 name: Some(ident.to_string()),
@@ -271,11 +280,11 @@ impl<'a> FunctionBuilder<'a> {
         function: TypeHandle,
         args: impl IntoIterator<Item = Handle<Expression>>,
     ) -> Result<ExpressionHandle<R>, BuilderError> {
-        let naga_fun = function.try_get_func()?;
+        let naga_fun = function.try_get_code()?;
 
         let ret_type = self.module_builder.get_type_by_id_or_add_it::<R>()?;
 
-        let ret = if ret_type.is_empty() {
+        let ret = if ret_type.is_zero_sized() {
             ExpressionHandle::<R>::from_empty()
         }
         else {
@@ -302,11 +311,7 @@ impl<'a> FunctionBuilder<'a> {
         init: Option<ExpressionHandle<T>>,
     ) -> Result<LetMutBinding<T>, BuilderError> {
         let ty = self.module_builder.get_type_by_id_or_add_it::<T>()?;
-        let let_mut = if ty.is_empty() {
-            LetMutBinding::from_empty()
-        }
-        else {
-            let ty = ty.try_get_type()?;
+        let let_mut = if let Some(ty) = ty.get_data() {
             let init = init.map(|handle| handle.try_get_handle()).transpose()?;
             let handle = self.local_variables.append(
                 LocalVariable {
@@ -318,6 +323,9 @@ impl<'a> FunctionBuilder<'a> {
             );
 
             LetMutBinding::from_handle(handle)
+        }
+        else {
+            LetMutBinding::from_empty()
         };
 
         Ok(let_mut)
@@ -332,22 +340,9 @@ impl<'a> FunctionBuilder<'a> {
     }
 
     fn build_naga(&mut self) -> naga::Function {
-        match self.statements.last() {
-            Some(Statement::Return { .. }) => {}
-            _ => {
-                if self.output.is_empty() {
-                    // todo: when does naga emit this?
-                    //self.statements.push(Statement::Return { value: None });
-                }
-                else {
-                    // naga will nag us later that we didn't return a value.
-                }
-            }
-        }
-
         let result = self
             .output
-            .get_type()
+            .get_data()
             .map(|ty| FunctionResult { ty, binding: None });
 
         let naga_func = Function {
@@ -381,7 +376,7 @@ impl<'a> FunctionBuilder<'a> {
             .module_builder
             .functions
             .append(naga_func, Default::default());
-        let handle = TypeHandle::Func(handle);
+        let handle = handle.into();
 
         self.module_builder.by_type_id.insert(self.type_id, handle);
 

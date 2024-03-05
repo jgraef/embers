@@ -4,23 +4,16 @@ use std::{
         TypeId,
     },
     marker::PhantomData,
-    sync::Arc,
 };
 
 use naga::{
     Expression,
     Handle,
-    Statement,
 };
 
 use super::{
     error::BuilderError,
     function::FunctionBuilder,
-    pointer::{
-        AddressSpace,
-        Pointer,
-    },
-    r#type::ShaderType,
 };
 
 #[derive(Debug)]
@@ -33,18 +26,6 @@ pub enum ExpressionHandle<T: ?Sized> {
     Empty {
         _ty: PhantomData<T>,
     },
-    Const {
-        value: Arc<T>,
-    },
-}
-
-impl<T> ExpressionHandle<T> {
-    pub fn from_constant(value: T) -> Self {
-        // if we take an Arc as argument instead, we can even support ?Sized constants
-        Self::Const {
-            value: Arc::new(value),
-        }
-    }
 }
 
 impl<T: ?Sized> ExpressionHandle<T> {
@@ -62,7 +43,6 @@ impl<T: ?Sized> ExpressionHandle<T> {
     pub fn get_handle(&self) -> Option<Handle<Expression>> {
         match self {
             ExpressionHandle::Handle { handle, _ty } => Some(*handle),
-            ExpressionHandle::Const { .. } => todo!("coerce constant into an expression"),
             _ => None,
         }
     }
@@ -73,13 +53,6 @@ impl<T: ?Sized> ExpressionHandle<T> {
                 ty: type_name::<T>(),
             }
         })
-    }
-
-    pub fn get_constant(&self) -> Option<&T> {
-        match self {
-            ExpressionHandle::Const { value } => Some(value),
-            _ => None,
-        }
     }
 }
 
@@ -99,11 +72,6 @@ impl<T: ?Sized> Clone for ExpressionHandle<T> {
                 }
             }
             Self::Empty { _ty } => Self::Empty { _ty: PhantomData },
-            Self::Const { value } => {
-                Self::Const {
-                    value: value.clone(),
-                }
-            }
         }
     }
 }

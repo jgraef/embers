@@ -13,17 +13,13 @@ use super::{
         ExpressionHandle,
     },
     function::FunctionBuilder,
-    module::ModuleBuilder,
     pointer::{
         AddressSpace,
         AsPointer,
         HasAddressSpace,
         Pointer,
     },
-    r#type::{
-        ShaderType,
-        TypeHandle,
-    },
+    r#type::ShaderType,
 };
 
 pub trait Assign<T> {

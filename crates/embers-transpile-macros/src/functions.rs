@@ -226,9 +226,7 @@ pub fn process_bare_function(input: &ItemFn, _args: &FnArgs) -> Result<TokenStre
 }
 
 pub fn process_impl_function(input: &ImplItemFn, _args: &ImplArgs) -> Result<TokenStream, Error> {
-    let output = process_function(&input.vis, &input.sig, &input.block)?;
-    println!("{output}");
-    Ok(output)
+    process_function(&input.vis, &input.sig, &input.block)
 }
 
 fn process_function(
@@ -251,8 +249,7 @@ fn process_function(
                     mut _function_builder: &mut ::embers_transpile::__private::FunctionBuilder,
                     _func_handle: ::embers_transpile::__private::TypeHandle,
                 | {
-                    //#call
-                    todo!();
+                    #call
                 },
             )
         }
@@ -397,7 +394,7 @@ fn generate_function_body(
 
     // make sure the return value type matches
     body.push(quote! {
-        let #result_var = ::embers_transpile::__private::AsExpression::as_expression(&#result_var, _function_builder)?;
+        let #result_var = ::embers_transpile::__private::AsExpression::as_expression(&#result_var, &mut _function_builder)?;
         let #result_var: ::embers_transpile::__private::ExpressionHandle<#ret> = #result_var;
     });
 
@@ -416,16 +413,16 @@ fn generate_function_body(
 fn generate_function_call(sig: &Signature) -> Result<TokenStream, Error> {
     let mut name_gen = NameGen::default();
     let mut arg_names = vec![];
-    let mut arg_bindings = vec![];
+    //let mut arg_bindings = vec![];
 
     for input in &sig.inputs {
         match input {
             FnArg::Receiver(receiver) => {
                 assert!(receiver.colon_token.is_none());
-                arg_bindings.push(quote!{
-                    let _self = ::embers_transpile::__private::AsExpression::as_expression(&self, _function_builder)?;
-                });
-                arg_names.push(quote! { _self });
+                //arg_bindings.push(quote!{
+                //    let _self = ::embers_transpile::__private::AsExpression::as_expression(&self, &mut _function_builder)?;
+                //});
+                arg_names.push(quote! { self });
             }
             FnArg::Typed(pat_type) => {
                 let ty = &pat_type.ty;
@@ -436,11 +433,11 @@ fn generate_function_call(sig: &Signature) -> Result<TokenStream, Error> {
                         assert!(pat_ident.subpat.is_none());
 
                         let var = &pat_ident.ident;
-                        let bind = name_gen.tmp_var("arg");
-                        arg_bindings.push(quote!{
-                            let #bind = ::embers_transpile::__private::AsExpression::as_expression(&#var, _function_builder)?;
-                        });
-                        arg_names.push(quote! { #bind });
+                        //let bind = name_gen.tmp_var("arg");
+                        //arg_bindings.push(quote!{
+                        //    let #bind = ::embers_transpile::__private::AsExpression::as_expression(&#var, &mut _function_builder)?;
+                        //});
+                        arg_names.push(quote! { #var });
                     }
                     syn::Pat::Wild(_) => {
                         // nothing to do here, except make sure the generated
@@ -453,15 +450,15 @@ fn generate_function_call(sig: &Signature) -> Result<TokenStream, Error> {
     }
 
     Ok(quote! {
-        _function_builder.add_call(
-            _func_handle,
-            {
-                #(#arg_bindings)*
-                [#(#arg_names.get_handle()),*].into_iter().flatten()
-            }
-            //[#(::embers_transpile::__private::AsExpression::as_expression(&#arg_names, _function_builder)?.get_handle()),*].into_iter().flatten()
-            //vec![],
-        )
+        {
+            let _args = [
+                #(::embers_transpile::__private::AsExpression::as_expression(&#arg_names, &mut _function_builder)?.get_handle()),*
+            ].into_iter().flatten();
+            _function_builder.add_call(
+                _func_handle,
+                _args,
+            )
+        }
     })
 }
 
@@ -969,7 +966,7 @@ fn process_expr(
             let ty = &strct.path;
 
             output.push(quote! {
-                let _struct_ty = _function_builder.module_builder.get_type_by_id_or_add_it::<#ty>()?.try_get_type()?;
+                let _struct_ty = _function_builder.module_builder.get_type_by_id_or_add_it::<#ty>()?.try_get_data()?;
                 let mut _field_exprs: ::embers_transpile::__private::Vec<::embers_transpile::__private::naga::Handle<::embers_transpile::__private::naga::Expression>> = vec![];
             });
 
@@ -1004,8 +1001,8 @@ fn process_expr(
                     let arg = process_expr(&unary.expr, output, name_gen)?;
                     let out = name_gen.tmp_var("deref");
                     output.push(quote! {
-                        let #arg = ::embers_transpile::__private::AsExpression::as_expression(&#arg, _function_builder)?;
-                        let #out = ::embers_transpile::__private::Dereference::dereference(&#arg, _function_builder)?;
+                        let #arg = ::embers_transpile::__private::AsExpression::as_expression(&#arg, &mut _function_builder)?;
+                        let #out = ::embers_transpile::__private::Dereference::dereference(&#arg, &mut _function_builder)?;
                     });
                     out.into()
                 }

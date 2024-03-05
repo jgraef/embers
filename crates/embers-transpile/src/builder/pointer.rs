@@ -1,9 +1,6 @@
-use std::{
-    marker::{
-        ConstParamTy,
-        PhantomData,
-    },
-    ops::Deref,
+use std::marker::{
+    ConstParamTy,
+    PhantomData,
 };
 
 use naga::{
@@ -63,12 +60,8 @@ pub struct Pointer<T: ShaderType + ?Sized, const A: AddressSpace> {
 
 impl<T: ShaderType, const A: AddressSpace> ShaderType for Pointer<T, A> {
     fn add_to_module(module_builder: &mut ModuleBuilder) -> Result<TypeHandle, BuilderError> {
-        let ty = module_builder.get_type_by_id_or_add_it::<T>()?;
-        let base = match ty {
-            TypeHandle::Empty => return Ok(module_builder.add_empty_type::<Self>()),
-            TypeHandle::Func(_) => return Err(BuilderError::NotANagaType { ty }),
-            TypeHandle::Type(ty) => ty,
-        };
+        let base = module_builder.get_type_by_id_or_add_it::<T>()?;
+        let Some(base) = base.get_data() else { return Ok(module_builder.add_empty_type::<Self>()); };
         let space = A.into();
         Ok(module_builder.add_type::<Self>(None, naga::TypeInner::Pointer { base, space }))
     }
@@ -86,7 +79,6 @@ impl<T: ShaderType, const A: AddressSpace> ExpressionHandle<Pointer<T, A>> {
                 expr
             }
             ExpressionHandle::Empty { _ty } => ExpressionHandle::from_empty(),
-            ExpressionHandle::Const { value } => todo!(),
         };
 
         Ok(expr)
@@ -109,9 +101,6 @@ impl<T: ShaderType, const A: AddressSpace> ExpressionHandle<Pointer<T, A>> {
             }
             ExpressionHandle::Empty { _ty } => {
                 // we store a empty type (e.g. ()) by doing nothing
-            }
-            ExpressionHandle::Const { value } => {
-                todo!("fixme: assigning a constant");
             }
         }
 
@@ -149,16 +138,5 @@ impl<T: ShaderType, const A: AddressSpace> Dereference for ExpressionHandle<Poin
         function_builder: &mut FunctionBuilder,
     ) -> Result<Self::Target, BuilderError> {
         self.load(function_builder)
-    }
-}
-
-pub struct Borrow<T> {
-    _ty: PhantomData<T>,
-}
-
-impl<T: ShaderType> ShaderType for Borrow<T> {
-    fn add_to_module(module_builder: &mut ModuleBuilder) -> Result<TypeHandle, BuilderError> {
-        //module_builder.add_borrow_type::<T>(Mutability::Immutable)
-        todo!();
     }
 }

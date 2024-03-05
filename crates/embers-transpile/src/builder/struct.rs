@@ -9,7 +9,6 @@ use std::{
 use naga::{
     Expression,
     Handle,
-    Span,
     StructMember,
     Type,
 };
@@ -84,7 +83,7 @@ impl<'a> StructBuilder<'a> {
 
     pub fn add_field<T: ShaderType>(&mut self, name: Option<String>) -> Result<(), BuilderError> {
         let field_type = self.module_builder.get_type_by_id_or_add_it::<T>()?;
-        if let Some(ty) = field_type.get_type() {
+        if let Some(ty) = field_type.get_data() {
             self.fields.push(StructField {
                 name: name.clone(),
                 ty,
