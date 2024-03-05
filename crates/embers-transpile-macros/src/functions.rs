@@ -201,7 +201,7 @@ pub fn process_entrypoint(input: &ItemFn, args: &FnArgs) -> Result<TokenStream, 
     let ident = &input.sig.ident;
     let ret = quote! { () };
 
-    let body = generate_function_body(vis, sig, ret, block, true)?;
+    let body = generate_function_body(sig, ret, block, true)?;
 
     let generated = quote! {
         #vis fn #ident() -> ::embers_transpile::__private::Result<::embers_transpile::__private::Module, ::embers_transpile::__private::BuilderError> {
@@ -221,37 +221,52 @@ pub fn process_entrypoint(input: &ItemFn, args: &FnArgs) -> Result<TokenStream, 
     Ok(generated)
 }
 
-pub fn process_bare_function(input: &ItemFn, _args: &FnArgs) -> Result<TokenStream, Error> {
-    process_function(&input.vis, &input.sig, &input.block)
+pub fn process_bare_function(input: &ItemFn, args: &FnArgs) -> Result<TokenStream, Error> {
+    process_function(&input.vis, &input.sig, &input.block, args.inline)
 }
 
 pub fn process_impl_function(input: &ImplItemFn, _args: &ImplArgs) -> Result<TokenStream, Error> {
-    process_function(&input.vis, &input.sig, &input.block)
+    process_function(&input.vis, &input.sig, &input.block, false)
 }
 
 fn process_function(
     vis: &Visibility,
     sig: &Signature,
     block: &Block,
+    inline: bool,
 ) -> Result<TokenStream, Error> {
     let (sig_transformed, ret) = transform_signature_to_generator(sig);
 
-    let body = generate_function_body(vis, sig, ret, block, false)?;
-    let call = generate_function_call(sig)?;
+    let generated = if inline {
+        let body = generate_function_body_inline(sig, ret, block)?;
+        quote! {
+            #vis #sig_transformed {
+                ::embers_transpile::__private::InlineCallGenerator::new(
+                    move |mut _function_builder: &mut ::embers_transpile::__private::FunctionBuilder| {
+                        #body
+                    },
+                )
+            }
+        }
+    }
+    else {
+        let body = generate_function_body(sig, ret, block, false)?;
+        let call = generate_function_call(sig)?;
 
-    let generated = quote! {
-        #vis #sig_transformed {
-            ::embers_transpile::__private::CallGenerator::new(
-                |mut _function_builder: &mut ::embers_transpile::__private::FunctionBuilder| {
-                    #body
-                },
-                move |
-                    mut _function_builder: &mut ::embers_transpile::__private::FunctionBuilder,
-                    _func_handle: ::embers_transpile::__private::TypeHandle,
-                | {
-                    #call
-                },
-            )
+        quote! {
+            #vis #sig_transformed {
+                ::embers_transpile::__private::CallGenerator::new(
+                    |mut _function_builder: &mut ::embers_transpile::__private::FunctionBuilder| {
+                        #body
+                    },
+                    move |
+                        mut _function_builder: &mut ::embers_transpile::__private::FunctionBuilder,
+                        _func_handle: ::embers_transpile::__private::TypeHandle,
+                    | {
+                        #call
+                    },
+                )
+            }
         }
     };
 
@@ -302,7 +317,6 @@ pub fn transform_signature_to_generator(sig: &Signature) -> (TokenStream, TokenS
 }
 
 fn generate_function_body(
-    vis: &Visibility,
     sig: &Signature,
     ret: TokenStream,
     block: &Block,
@@ -461,6 +475,36 @@ fn generate_function_call(sig: &Signature) -> Result<TokenStream, Error> {
         }
     })
 }
+
+
+fn generate_function_body_inline(
+    sig: &Signature,
+    ret: TokenStream,
+    block: &Block,
+) -> Result<TokenStream, Error> {
+    let mut body = TokenBuffer::default();
+    let mut name_gen = NameGen::default();
+
+    // the inputs already have the right names and will be moved into to generating closure
+
+    let result_var = process_block_inner(block, &mut body, &mut name_gen)?;
+
+    // make sure the return value type matches
+    body.push(quote! {
+        let #result_var = ::embers_transpile::__private::AsExpression::as_expression(&#result_var, &mut _function_builder)?;
+        let #result_var: ::embers_transpile::__private::ExpressionHandle<#ret> = #result_var;
+        // should we emit here?
+        //_function_builder.add_emit(&#result_var)?;
+        ::embers_transpile::__private::Ok::<_, ::embers_transpile::__private::BuilderError>(#result_var)
+    });
+
+    Ok(quote!{
+        {
+            #body
+        }
+    })
+}
+
 
 fn implicit_unit(
     expr: Option<ExprOut>,

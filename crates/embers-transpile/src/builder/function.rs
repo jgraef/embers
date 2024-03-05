@@ -96,6 +96,41 @@ impl<B: Fn(&mut FunctionBuilder) -> Result<(), BuilderError> + 'static, C: 'stat
     }
 }
 
+
+
+pub struct InlineCallGenerator<B, R> {
+    body: B,
+    _return_type: PhantomData<R>,
+}
+
+impl<B, R> InlineCallGenerator<B, R> {
+    pub fn new(body: B) -> Self {
+        Self {
+            body,
+            _return_type: PhantomData,
+        }
+    }
+}
+
+impl<
+        B: Fn(&mut FunctionBuilder) -> Result<ExpressionHandle<R>, BuilderError> + 'static,
+        R: 'static,
+    > GenerateCall for InlineCallGenerator<B, R>
+{
+    type Return = R;
+
+    fn call(
+        &self,
+        function_builder: &mut FunctionBuilder,
+    ) -> Result<ExpressionHandle<R>, BuilderError> {
+        let ret_handle = (self.body)(function_builder)?;
+        Ok(ret_handle)
+    }
+}
+
+
+
+
 pub struct EntrypointGenerator<B> {
     body: B,
 }

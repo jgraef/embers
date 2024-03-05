@@ -91,6 +91,7 @@ pub fn transpile(attrs: TokenStream, input: TokenStream) -> TokenStream {
             };
 
             if args.entrypoint {
+                assert!(!args.inline);
                 process_entrypoint(&func, &args).unwrap()
             }
             else {

@@ -4,6 +4,8 @@ use darling::FromMeta;
 pub struct FnArgs {
     #[darling(default)]
     pub entrypoint: bool,
+    #[darling(default)]
+    pub inline: bool,
 }
 
 #[derive(Debug, FromMeta)]

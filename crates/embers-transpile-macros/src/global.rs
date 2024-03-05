@@ -155,7 +155,7 @@ impl GlobalVar {
 
         let output = quote! {
             #[allow(non_camel_case_types)]
-            pub struct #name;
+            #visibility struct #name;
 
             impl ::embers_transpile::__private::GlobalVariable for #name {
                 const NAME: &'static str = #name_lit;
