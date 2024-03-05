@@ -287,7 +287,8 @@ pub fn transform_signature_to_generator(sig: &Signature) -> (TokenStream, TokenS
 
                 let ty = &receiver.ty;
                 let ty = if receiver.reference.is_some() {
-                    quote! { ::embers_transpile::__private::PhantomReceiverPointer<Self, { ::embers_transpile::__private::AddressSpace::Private }> }
+                    // todo: what address space?
+                    quote! { ::embers_transpile::__private::PhantomReceiverPointer<Self, ::embers_transpile::__private::address_space::Private> }
                 }
                 else {
                     quote! { ::embers_transpile::__private::PhantomReceiver<Self> }
@@ -342,7 +343,7 @@ fn generate_function_body(
                 let ty = &receiver.ty;
                 let ty = if receiver.reference.is_some() {
                     // todo: what address space do we use? we could abuse lifetimes for this.
-                    quote! { ::embers_transpile::__private::Pointer<Self, { ::embers_transpile::__private::AddressSpace::Private }> }
+                    quote! { ::embers_transpile::__private::Pointer<Self, ::embers_transpile::__private::address_space::Private> }
                 }
                 else {
                     quote! { Self }
@@ -434,7 +435,9 @@ fn generate_function_call(sig: &Signature) -> Result<TokenStream, Error> {
             FnArg::Receiver(receiver) => {
                 assert!(receiver.colon_token.is_none());
                 //arg_bindings.push(quote!{
-                //    let _self = ::embers_transpile::__private::AsExpression::as_expression(&self, &mut _function_builder)?;
+                //    let _self =
+                // ::embers_transpile::__private::AsExpression::as_expression(&self, &mut
+                // _function_builder)?;
                 //});
                 arg_names.push(quote! { self });
             }
@@ -449,7 +452,9 @@ fn generate_function_call(sig: &Signature) -> Result<TokenStream, Error> {
                         let var = &pat_ident.ident;
                         //let bind = name_gen.tmp_var("arg");
                         //arg_bindings.push(quote!{
-                        //    let #bind = ::embers_transpile::__private::AsExpression::as_expression(&#var, &mut _function_builder)?;
+                        //    let #bind =
+                        // ::embers_transpile::__private::AsExpression::as_expression(&#var, &mut
+                        // _function_builder)?;
                         //});
                         arg_names.push(quote! { #var });
                     }
@@ -476,7 +481,6 @@ fn generate_function_call(sig: &Signature) -> Result<TokenStream, Error> {
     })
 }
 
-
 fn generate_function_body_inline(
     sig: &Signature,
     ret: TokenStream,
@@ -485,7 +489,8 @@ fn generate_function_body_inline(
     let mut body = TokenBuffer::default();
     let mut name_gen = NameGen::default();
 
-    // the inputs already have the right names and will be moved into to generating closure
+    // the inputs already have the right names and will be moved into to generating
+    // closure
 
     let result_var = process_block_inner(block, &mut body, &mut name_gen)?;
 
@@ -498,13 +503,12 @@ fn generate_function_body_inline(
         ::embers_transpile::__private::Ok::<_, ::embers_transpile::__private::BuilderError>(#result_var)
     });
 
-    Ok(quote!{
+    Ok(quote! {
         {
             #body
         }
     })
 }
-
 
 fn implicit_unit(
     expr: Option<ExprOut>,

@@ -17,6 +17,7 @@ use super::{
         FunctionBuilder,
         GenerateFunction,
     },
+    pointer::AddressSpace,
     r#struct::StructBuilder,
     r#type::{
         ShaderType,
@@ -65,16 +66,18 @@ impl ModuleBuilder {
         name: Option<String>,
         naga_type_inner: naga::TypeInner,
     ) -> TypeHandle {
-        let handle = self.types.insert(
-            naga::Type {
-                name,
-                inner: naga_type_inner,
-            },
-            naga::Span::default(),
-        ).into();
+        let handle = self
+            .types
+            .insert(
+                naga::Type {
+                    name,
+                    inner: naga_type_inner,
+                },
+                naga::Span::default(),
+            )
+            .into();
 
-        self.by_type_id
-            .insert(TypeId::of::<T>(), handle);
+        self.by_type_id.insert(TypeId::of::<T>(), handle);
 
         handle
     }
@@ -103,8 +106,11 @@ impl ModuleBuilder {
         // todo: add traits for naga::valid::TypeFlags and add Sized as trait bound here
 
         let base = self.get_type_by_id_or_add_it::<T>()?;
-        let Some(base) = base.get_data() else { return Ok(self.add_empty_type::<T>()); };
-        
+        let Some(base) = base.get_data()
+        else {
+            return Ok(self.add_empty_type::<T>());
+        };
+
         Ok(self.add_type::<[T]>(
             None,
             naga::TypeInner::Array {
@@ -124,7 +130,10 @@ impl ModuleBuilder {
         let n = u32::try_from(N).map_err(|_| BuilderError::Invalid)?;
 
         let base = self.get_type_by_id_or_add_it::<T>()?;
-        let Some(base) = base.get_data() else { return Ok(self.add_empty_type::<T>()); };
+        let Some(base) = base.get_data()
+        else {
+            return Ok(self.add_empty_type::<T>());
+        };
 
         Ok(self.add_type::<[T; N]>(
             None,
@@ -187,7 +196,7 @@ impl ModuleBuilder {
                 let handle = self.global_variables.append(
                     naga::GlobalVariable {
                         name: Some(G::NAME.to_owned()),
-                        space: G::ADDRESS_SPACE.into(),
+                        space: G::AddressSpace::to_naga(),
                         binding: G::BINDING,
                         ty,
                         init: None,

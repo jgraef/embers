@@ -14,9 +14,9 @@ use super::{
     },
     function::FunctionBuilder,
     pointer::{
+        address_space,
         AddressSpace,
         AsPointer,
-        HasAddressSpace,
         Pointer,
     },
     r#type::ShaderType,
@@ -90,7 +90,7 @@ impl<T: ShaderType> AsExpression<T> for LetMutBinding<T> {
 }
 
 impl<T: ShaderType> AsPointer for LetMutBinding<T> {
-    type Pointer = ExpressionHandle<Pointer<T, { AddressSpace::Function }>>;
+    type Pointer = ExpressionHandle<Pointer<T, address_space::Function>>;
 
     fn as_pointer(
         &self,
@@ -120,22 +120,18 @@ impl<T: ShaderType> Assign<T> for LetMutBinding<T> {
     }
 }
 
-impl<T> HasAddressSpace for LetMutBinding<T> {
-    const ADDRESS_SPACE: AddressSpace = AddressSpace::Function;
-}
-
 pub trait GlobalVariable: 'static {
-    const NAME: &'static str;
-    const ADDRESS_SPACE: AddressSpace;
-    const BINDING: Option<ResourceBinding>;
     type Type: ShaderType + ?Sized;
+    type AddressSpace: AddressSpace;
+    const NAME: &'static str;
+    const BINDING: Option<ResourceBinding>;
 }
 
-impl<G: GlobalVariable> AsExpression<Pointer<G::Type, { G::ADDRESS_SPACE }>> for G {
+impl<G: GlobalVariable> AsExpression<Pointer<G::Type, G::AddressSpace>> for G {
     fn as_expression(
         &self,
         function_builder: &mut FunctionBuilder,
-    ) -> Result<ExpressionHandle<Pointer<G::Type, { G::ADDRESS_SPACE }>>, BuilderError> {
+    ) -> Result<ExpressionHandle<Pointer<G::Type, G::AddressSpace>>, BuilderError> {
         let expression_handle = match function_builder
             .module_builder
             .get_global_variable_or_add_it::<G>()?

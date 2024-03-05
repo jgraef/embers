@@ -22,6 +22,7 @@ use super::{
     function::FunctionBuilder,
     module::ModuleBuilder,
     pointer::{
+        address_space,
         AddressSpace,
         AsPointer,
         Pointer,
@@ -163,8 +164,8 @@ impl<T: ShaderType, U: ShaderType> AsExpression<U> for Field<T, U> {
 }
 
 impl<T: ShaderType, U: ShaderType> AsPointer for Field<T, U> {
-    // fixme
-    type Pointer = ExpressionHandle<Pointer<U, { AddressSpace::Function }>>;
+    // fixme: how do we know the appropriate address space here?
+    type Pointer = ExpressionHandle<Pointer<U, address_space::Private>>;
 
     fn as_pointer(
         &self,

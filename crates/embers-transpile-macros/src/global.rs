@@ -113,24 +113,24 @@ impl GlobalVar {
 
         let address_space_expr = match attributes.address_space {
             AddressSpace::Function => {
-                quote! { ::embers_transpile::__private::AddressSpace::Function }
+                quote! { ::embers_transpile::__private::address_space::Function }
             }
             AddressSpace::Private => {
-                quote! { ::embers_transpile::__private::AddressSpace::Private }
+                quote! { ::embers_transpile::__private::address_space::Private }
             }
             AddressSpace::WorkGroup => {
-                quote! { ::embers_transpile::__private::AddressSpace::WorkGroup }
+                quote! { ::embers_transpile::__private::address_space::WorkGroup }
             }
             AddressSpace::Uniform => {
-                quote! { ::embers_transpile::__private::AddressSpace::Uniform }
+                quote! { ::embers_transpile::__private::address_space::Uniform }
             }
             AddressSpace::Storage(access) => {
                 match access {
                     StorageAccess::Read => {
-                        quote! { ::embers_transpile::__private::AddressSpace::Storage { load: true, store: false } }
+                        quote! { ::embers_transpile::__private::address_space::StorageRead }
                     }
                     StorageAccess::Write => {
-                        quote! { ::embers_transpile::__private::AddressSpace::Storage { load: true, store: true } }
+                        quote! { ::embers_transpile::__private::address_space::StorageReadWrite }
                     }
                 }
             }
@@ -158,10 +158,10 @@ impl GlobalVar {
             #visibility struct #name;
 
             impl ::embers_transpile::__private::GlobalVariable for #name {
-                const NAME: &'static str = #name_lit;
-                const ADDRESS_SPACE: ::embers_transpile::__private::AddressSpace = #address_space_expr;
-                const BINDING: ::embers_transpile::__private::Option<::embers_transpile::__private::naga::ResourceBinding> = #binding_expr;
                 type Type = #ty;
+                type AddressSpace = #address_space_expr;
+                const NAME: &'static str = #name_lit;
+                const BINDING: ::embers_transpile::__private::Option<::embers_transpile::__private::naga::ResourceBinding> = #binding_expr;
             }
         };
 

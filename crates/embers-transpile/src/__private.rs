@@ -41,6 +41,7 @@ pub use crate::{
             ModuleBuilder,
         },
         pointer::{
+            address_space,
             AddressSpace,
             AsPointer,
             Dereference,

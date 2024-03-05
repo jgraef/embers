@@ -27,9 +27,10 @@ use super::{
     },
     module::ModuleBuilder,
     pointer::{
+        address_space,
         AddressSpace,
         AsPointer,
-        HasAddressSpace,
+        InAddressSpace,
         Pointer,
     },
     r#type::{
@@ -96,8 +97,6 @@ impl<B: Fn(&mut FunctionBuilder) -> Result<(), BuilderError> + 'static, C: 'stat
     }
 }
 
-
-
 pub struct InlineCallGenerator<B, R> {
     body: B,
     _return_type: PhantomData<R>,
@@ -127,9 +126,6 @@ impl<
         Ok(ret_handle)
     }
 }
-
-
-
 
 pub struct EntrypointGenerator<B> {
     body: B,
@@ -177,13 +173,11 @@ impl<T: ?Sized> AsExpression<T> for PhantomReceiver<T> {
     }
 }
 
-pub struct PhantomReceiverPointer<T: ShaderType + ?Sized, const ADDRESS_SPACE: AddressSpace> {
-    handle: ExpressionHandle<Pointer<T, { ADDRESS_SPACE }>>,
+pub struct PhantomReceiverPointer<T: ShaderType + ?Sized, A: AddressSpace> {
+    handle: ExpressionHandle<Pointer<T, A>>,
 }
 
-impl<T: ShaderType + ?Sized, const ADDRESS_SPACE: AddressSpace> std::ops::Deref
-    for PhantomReceiverPointer<T, ADDRESS_SPACE>
-{
+impl<T: ShaderType + ?Sized, A: AddressSpace> std::ops::Deref for PhantomReceiverPointer<T, A> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -191,20 +185,21 @@ impl<T: ShaderType + ?Sized, const ADDRESS_SPACE: AddressSpace> std::ops::Deref
     }
 }
 
-impl<T: ShaderType + ?Sized, const ADDRESS_SPACE: AddressSpace>
-    From<ExpressionHandle<Pointer<T, { ADDRESS_SPACE }>>>
-    for PhantomReceiverPointer<T, { ADDRESS_SPACE }>
+impl<T: ShaderType + ?Sized, A: AddressSpace> From<ExpressionHandle<Pointer<T, A>>>
+    for PhantomReceiverPointer<T, A>
 {
-    fn from(handle: ExpressionHandle<Pointer<T, { ADDRESS_SPACE }>>) -> Self {
+    fn from(handle: ExpressionHandle<Pointer<T, A>>) -> Self {
         Self { handle }
     }
 }
 
-impl<T: ShaderType + ?Sized, const ADDRESS_SPACE: AddressSpace> AsExpression<Pointer<T, { ADDRESS_SPACE }>> for PhantomReceiverPointer<T, { ADDRESS_SPACE }> {
+impl<T: ShaderType + ?Sized, A: AddressSpace> AsExpression<Pointer<T, A>>
+    for PhantomReceiverPointer<T, A>
+{
     fn as_expression(
         &self,
         _function_builder: &mut FunctionBuilder,
-    ) -> Result<ExpressionHandle<Pointer<T, { ADDRESS_SPACE }>>, BuilderError> {
+    ) -> Result<ExpressionHandle<Pointer<T, A>>, BuilderError> {
         Ok(self.handle.clone())
     }
 }
@@ -456,7 +451,7 @@ impl<T: ShaderType> AsExpression<T> for FnInputBinding<T> {
 }
 
 impl<T: ShaderType> AsPointer for FnInputBinding<T> {
-    type Pointer = ExpressionHandle<Pointer<T, { AddressSpace::Function }>>;
+    type Pointer = ExpressionHandle<Pointer<T, address_space::Function>>;
 
     fn as_pointer(
         &self,
@@ -471,8 +466,4 @@ impl<T: ShaderType> AsPointer for FnInputBinding<T> {
 
         Ok(expr)
     }
-}
-
-impl<T> HasAddressSpace for FnInputBinding<T> {
-    const ADDRESS_SPACE: AddressSpace = AddressSpace::Function;
 }

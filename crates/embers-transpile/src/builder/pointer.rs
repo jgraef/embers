@@ -1,12 +1,8 @@
-use std::marker::{
-    ConstParamTy,
-    PhantomData,
-};
+use std::marker::PhantomData;
 
 use naga::{
     Expression,
     Statement,
-    StorageAccess,
 };
 
 use super::{
@@ -20,54 +16,75 @@ use super::{
     },
 };
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, ConstParamTy)]
-pub enum AddressSpace {
-    Function,
-    Private,
-    WorkGroup,
-    Uniform,
-    Storage { load: bool, store: bool },
-    Handle,
-    PushConstant,
+pub trait AddressSpace: 'static {
+    fn to_naga() -> naga::AddressSpace;
 }
 
-impl From<AddressSpace> for naga::AddressSpace {
-    fn from(value: AddressSpace) -> Self {
-        match value {
-            AddressSpace::Function => naga::AddressSpace::Function,
-            AddressSpace::Private => naga::AddressSpace::Private,
-            AddressSpace::WorkGroup => naga::AddressSpace::WorkGroup,
-            AddressSpace::Uniform => naga::AddressSpace::Uniform,
-            AddressSpace::Storage { load, store } => {
-                let mut access = StorageAccess::empty();
-                if load {
-                    access |= StorageAccess::LOAD
+pub trait InAddressSpace {
+    type AddressSpace: AddressSpace;
+}
+
+pub mod address_space {
+    use naga::StorageAccess;
+
+    use super::AddressSpace;
+
+    macro_rules! impl_address_space {
+        ($name:ident) => {
+            pub struct $name;
+
+            impl AddressSpace for $name {
+                fn to_naga() -> naga::AddressSpace {
+                    naga::AddressSpace::$name
                 }
-                if store {
-                    access |= StorageAccess::STORE
-                }
-                naga::AddressSpace::Storage { access }
             }
-            AddressSpace::Handle => naga::AddressSpace::Handle,
-            AddressSpace::PushConstant => naga::AddressSpace::PushConstant,
+        };
+    }
+
+    impl_address_space!(Function);
+    impl_address_space!(Private);
+    impl_address_space!(WorkGroup);
+    impl_address_space!(Uniform);
+    impl_address_space!(Handle);
+    impl_address_space!(PushConstant);
+
+    pub struct StorageRead;
+    impl AddressSpace for StorageRead {
+        fn to_naga() -> naga::AddressSpace {
+            naga::AddressSpace::Storage {
+                access: StorageAccess::LOAD,
+            }
+        }
+    }
+
+    pub struct StorageReadWrite;
+    impl AddressSpace for StorageReadWrite {
+        fn to_naga() -> naga::AddressSpace {
+            naga::AddressSpace::Storage {
+                access: StorageAccess::LOAD | StorageAccess::STORE,
+            }
         }
     }
 }
 
-pub struct Pointer<T: ShaderType + ?Sized, const A: AddressSpace> {
+pub struct Pointer<T: ShaderType + ?Sized, A: AddressSpace> {
     _ty: PhantomData<T>,
+    _space: PhantomData<A>,
 }
 
-impl<T: ShaderType, const A: AddressSpace> ShaderType for Pointer<T, A> {
+impl<T: ShaderType, A: AddressSpace> ShaderType for Pointer<T, A> {
     fn add_to_module(module_builder: &mut ModuleBuilder) -> Result<TypeHandle, BuilderError> {
         let base = module_builder.get_type_by_id_or_add_it::<T>()?;
-        let Some(base) = base.get_data() else { return Ok(module_builder.add_empty_type::<Self>()); };
-        let space = A.into();
+        let Some(base) = base.get_data()
+        else {
+            return Ok(module_builder.add_empty_type::<Self>());
+        };
+        let space = A::to_naga();
         Ok(module_builder.add_type::<Self>(None, naga::TypeInner::Pointer { base, space }))
     }
 }
 
-impl<T: ShaderType, const A: AddressSpace> ExpressionHandle<Pointer<T, A>> {
+impl<T: ShaderType, A: AddressSpace> ExpressionHandle<Pointer<T, A>> {
     pub fn load(
         &self,
         function_builder: &mut FunctionBuilder,
@@ -126,11 +143,7 @@ pub trait AsPointer {
     ) -> Result<Self::Pointer, BuilderError>;
 }
 
-pub trait HasAddressSpace {
-    const ADDRESS_SPACE: AddressSpace;
-}
-
-impl<T: ShaderType, const A: AddressSpace> Dereference for ExpressionHandle<Pointer<T, A>> {
+impl<T: ShaderType, A: AddressSpace> Dereference for ExpressionHandle<Pointer<T, A>> {
     type Target = ExpressionHandle<T>;
 
     fn dereference(
