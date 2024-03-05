@@ -40,10 +40,10 @@ pub fn impl_shader_type_for_struct(
                 };
                 accessor_impls.push(
                     quote! {
-                        impl ::embers_transpile::__private::FieldAccess<{ ::embers_transpile::__private::FieldAccessor::Unnamed(#i) }> for #ident {
+                        impl ::embers_transpile::__private::FieldAccess<::embers_transpile::__private::UnnamedFieldAccessor<{#i}>> for #ident {
                             #field_access_impl
                         }
-                        impl ::embers_transpile::__private::FieldAccess<{ ::embers_transpile::__private::FieldAccessor::Named(#field_name_literal) }> for #ident {
+                        impl ::embers_transpile::__private::FieldAccess<::embers_transpile::__private::NamedFieldAccessor({#field_name_literal})> for #ident {
                             #field_access_impl
                         }
                     }
@@ -56,7 +56,7 @@ pub fn impl_shader_type_for_struct(
                 struct_fields.push(quote! { struct_builder.add_unnamed_field::<#field_type>()?; });
                 accessor_impls.push(
                     quote! {
-                        impl ::embers_transpile::__private::FieldAccess<{ ::embers_transpile::__private::FieldAccessor::Unnamed(#i) }> for #ident {
+                        impl ::embers_transpile::__private::FieldAccess<::embers_transpile::__private::UnnamedFieldAccessor<{#i}>> for #ident {
                             const INDEX: usize = #i;
                             type Type = #field_type;
                         }

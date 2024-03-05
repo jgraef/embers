@@ -50,7 +50,8 @@ pub use crate::{
         r#struct::{
             Field,
             FieldAccess,
-            FieldAccessor,
+            NamedFieldAccessor,
+            UnnamedFieldAccessor,
         },
         r#type::{
             ShaderType,

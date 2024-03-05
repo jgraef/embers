@@ -33,13 +33,15 @@ use super::{
     },
 };
 
-#[derive(ConstParamTy, Copy, Clone, Debug, PartialEq, Eq)]
-pub enum FieldAccessor {
-    Unnamed(usize),
-    Named(&'static str),
-}
+pub trait FieldAccessor {}
 
-pub trait FieldAccess<const FIELD: FieldAccessor> {
+pub struct UnnamedFieldAccessor<const INDEX: usize>;
+impl<const INDEX: usize> FieldAccessor for UnnamedFieldAccessor<{INDEX}> {}
+
+pub struct NamedFieldAccessor<const NAME: &'static str>;
+impl<const NAME: &'static str> FieldAccessor for NamedFieldAccessor<{NAME}> {}
+
+pub trait FieldAccess<F: FieldAccessor> {
     const INDEX: usize;
     type Type;
 }
@@ -140,9 +142,9 @@ pub struct Field<T, U> {
 }
 
 impl<T, U> Field<T, U> {
-    pub fn new<const FIELD: FieldAccessor>(base: ExpressionHandle<T>) -> Self
+    pub fn new<F: FieldAccessor>(base: ExpressionHandle<T>) -> Self
     where
-        T: FieldAccess<FIELD, Type = U>,
+        T: FieldAccess<F, Type = U>,
     {
         Self {
             base,

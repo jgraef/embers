@@ -915,7 +915,7 @@ fn process_expr(
 
             let out = name_gen.tmp_var("field");
             output.push(quote! {
-                let #out = ::embers_transpile::__private::Field::new::<{::embers_transpile::__private::FieldAccessor::#field_accessor}>(#base);
+                let #out = ::embers_transpile::__private::Field::new::<::embers_transpile::__private::#field_accessor>(#base);
                 //let #out = #private::AsExpression::as_expression(&_field, _function_builder).unwrap();
             });
             out.into()
@@ -1078,11 +1078,11 @@ fn field_accessor_for_member(member: &Member) -> TokenStream {
     match member {
         syn::Member::Named(named) => {
             let name_lit = ident_to_literal(named);
-            quote! { Named(#name_lit) }
+            quote! { NamedFieldAccessor<{#name_lit}> }
         }
         syn::Member::Unnamed(unnamed) => {
             let index = unnamed.index as usize;
-            quote! { Unnamed(#index) }
+            quote! { UnnamedFieldAccessor<{#index}> }
         }
     }
 }
