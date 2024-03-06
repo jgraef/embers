@@ -426,19 +426,12 @@ fn generate_function_body(
 }
 
 fn generate_function_call(sig: &Signature) -> Result<TokenStream, Error> {
-    let mut name_gen = NameGen::default();
     let mut arg_names = vec![];
-    //let mut arg_bindings = vec![];
 
     for input in &sig.inputs {
         match input {
             FnArg::Receiver(receiver) => {
                 assert!(receiver.colon_token.is_none());
-                //arg_bindings.push(quote!{
-                //    let _self =
-                // ::embers_transpile::__private::AsExpression::as_expression(&self, &mut
-                // _function_builder)?;
-                //});
                 arg_names.push(quote! { self });
             }
             FnArg::Typed(pat_type) => {
@@ -450,12 +443,6 @@ fn generate_function_call(sig: &Signature) -> Result<TokenStream, Error> {
                         assert!(pat_ident.subpat.is_none());
 
                         let var = &pat_ident.ident;
-                        //let bind = name_gen.tmp_var("arg");
-                        //arg_bindings.push(quote!{
-                        //    let #bind =
-                        // ::embers_transpile::__private::AsExpression::as_expression(&#var, &mut
-                        // _function_builder)?;
-                        //});
                         arg_names.push(quote! { #var });
                     }
                     syn::Pat::Wild(_) => {

@@ -36,10 +36,10 @@ use super::{
 pub trait FieldAccessor {}
 
 pub struct UnnamedFieldAccessor<const INDEX: usize>;
-impl<const INDEX: usize> FieldAccessor for UnnamedFieldAccessor<{INDEX}> {}
+impl<const INDEX: usize> FieldAccessor for UnnamedFieldAccessor<{ INDEX }> {}
 
 pub struct NamedFieldAccessor<const NAME: &'static str>;
-impl<const NAME: &'static str> FieldAccessor for NamedFieldAccessor<{NAME}> {}
+impl<const NAME: &'static str> FieldAccessor for NamedFieldAccessor<{ NAME }> {}
 
 pub trait FieldAccess<F: FieldAccessor> {
     const INDEX: usize;
