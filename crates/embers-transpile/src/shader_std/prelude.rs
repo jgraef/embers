@@ -1,5 +1,8 @@
 pub use super::types::*;
 pub use crate::{
-    global,
+    builder::r#type::{
+        ShaderType,
+        Width,
+    },
     transpile,
 };

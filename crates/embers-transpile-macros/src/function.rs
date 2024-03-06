@@ -15,6 +15,7 @@ use quote::{
 };
 use strum::EnumString;
 use syn::{
+    Attribute,
     BinOp,
     Block,
     Expr,
@@ -30,13 +31,13 @@ use syn::{
     ReturnType,
     Signature,
     Stmt,
+    Token,
     Type,
     UnOp,
     Visibility,
 };
 
 use crate::{
-    args::FnMeta,
     error::Error,
     utils::{
         ident_to_literal,
@@ -46,6 +47,36 @@ use crate::{
         TypePosition,
     },
 };
+
+#[derive(Debug, FromAttributes)]
+#[darling(attributes(transpile))]
+pub struct FnAttributes {
+    #[darling(flatten)]
+    pub meta: FnMeta,
+}
+
+#[derive(Debug, FromMeta)]
+pub struct FnMeta {
+    #[darling(default)]
+    pub entrypoint: bool,
+    #[darling(default)]
+    pub inline: bool,
+}
+
+impl FnMeta {
+    pub fn parse(
+        nested_meta: Option<&[NestedMeta]>,
+        item_attributes: &[Attribute],
+    ) -> Result<Self, Error> {
+        let meta = if let Some(nested_meta) = nested_meta {
+            FnMeta::from_list(nested_meta)?
+        }
+        else {
+            FnAttributes::from_attributes(item_attributes)?.meta
+        };
+        Ok(meta)
+    }
+}
 
 #[derive(Debug, EnumString)]
 #[strum(serialize_all = "snake_case")]
@@ -77,7 +108,7 @@ impl ToTokens for BuiltinType {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let out = match self {
             BuiltinType::Position { invariant } => {
-                quote! { ::embers_ricsl::__private::naga::BuiltIn::Position { #invariant } }
+                quote! { ::embers_ricsl::__private::naga::BuiltIn::Position { invariant: #invariant } }
             }
             BuiltinType::ViewIndex => {
                 quote! { ::embers_ricsl::__private::naga::BuiltIn::ViewIndex }
@@ -169,32 +200,55 @@ impl FromMeta for BuiltinType {
     }
 }
 
-#[derive(Debug, FromMeta)]
-struct Binding {
+#[derive(Clone, Copy, Debug, FromMeta)]
+pub enum StorageAccess {
+    #[darling(word)]
+    Read,
+    Write,
+}
+
+#[derive(Clone, Copy, Debug, FromMeta)]
+pub enum AddressSpace {
+    Function,
+    Private,
+    WorkGroup,
+    Uniform,
+    Storage(StorageAccess),
+    Handle,
+    PushConstant,
+}
+
+impl Default for AddressSpace {
+    fn default() -> Self {
+        Self::Private
+    }
+}
+
+#[derive(Debug, Default, FromMeta)]
+pub struct GlobalMeta {
+    pub group: Option<u32>,
+    pub binding: Option<u32>,
     #[darling(default)]
-    group: usize,
-    id: usize,
+    pub address_space: AddressSpace,
+}
+
+#[derive(Debug, FromMeta)]
+enum EntryPointArgMeta {
+    Builtin(BuiltinType),
+    Global(GlobalMeta),
 }
 
 #[derive(Debug, FromAttributes)]
-#[darling(attributes(ricsl))]
-struct EntrypointArgAttrs {
-    builtin: Option<BuiltinType>,
-    binding: Option<Binding>,
-}
-
-impl EntrypointArgAttrs {
-    pub fn validate(&self) -> Result<(), Error> {
-        if self.builtin.is_some() && self.binding.is_some() {
-            panic!("argument can't be builtin and binding at the same time");
-        }
-        Ok(())
-    }
+#[darling(attributes(transpile))]
+struct EntrypointArgAttributes {
+    #[darling(flatten)]
+    meta: EntryPointArgMeta,
 }
 
 pub fn process_entrypoint(input: &ItemFn, _args: &FnMeta) -> Result<TokenStream, Error> {
     let vis = &input.vis;
     let sig = &input.sig;
+    let generics = &sig.generics;
     let block = &input.block;
     let ident = &input.sig.ident;
     let ret = quote! { () };
@@ -202,7 +256,7 @@ pub fn process_entrypoint(input: &ItemFn, _args: &FnMeta) -> Result<TokenStream,
     let body = generate_function_body(sig, ret, block, true)?;
 
     let generated = quote! {
-        #vis fn #ident() -> ::embers_transpile::__private::Result<::embers_transpile::__private::Module, ::embers_transpile::__private::BuilderError> {
+        #vis fn #ident #generics () -> ::embers_transpile::__private::Result<::embers_transpile::__private::Module, ::embers_transpile::__private::BuilderError> {
             let mut module_builder = ::embers_transpile::__private::ModuleBuilder::default();
             module_builder.add_entrypoint(
                 ::embers_transpile::__private::EntrypointGenerator::new(
@@ -352,8 +406,10 @@ pub fn transform_signature_to_generator(sig: &Signature) -> (TokenStream, TokenS
         ReturnType::Type(_, ty) => quote! { #ty },
     };
 
+    let generics = &sig.generics;
+
     let sig = quote! {
-        fn #ident(#(#inputs),*) -> impl ::embers_transpile::__private::GenerateCall<Return = #ret>
+        fn #ident #generics (#(#inputs),*) -> impl ::embers_transpile::__private::GenerateCall<Return = #ret>
     };
 
     (sig, ret)
@@ -396,24 +452,6 @@ fn generate_function_body(
                 });
             }
             FnArg::Typed(pat_type) => {
-                if entrypoint {
-                    let attrs = EntrypointArgAttrs::from_attributes(&pat_type.attrs).unwrap();
-                    attrs.validate()?;
-                    match &attrs.builtin {
-                        Some(b) => {
-                            body.push(
-                                quote! { let _binding = Some(::embers_transpile::__private::naga::Binding::BuiltIn(#b)); },
-                            );
-                        }
-                        None => {
-                            body.push(quote! { let _binding = None; });
-                        }
-                    };
-                }
-                else {
-                    body.push(quote! { let _binding = None; });
-                }
-
                 let mut ty = pat_type.ty.clone();
                 map_types(&mut ty, TypePosition::Argument);
 
@@ -426,14 +464,91 @@ fn generate_function_body(
                         let name = ident_to_literal(ident);
                         let is_mut = pat_ident.mutability.is_some();
 
-                        body.push(quote! {
-                            let #ident = _function_builder.add_input_named(#name, #ident, #is_mut, _binding)?;
-                        });
+                        let mut is_global = false;
+                        if entrypoint {
+                            let attrs = EntrypointArgAttributes::from_attributes(&pat_type.attrs)
+                                .map_err(|e| {
+                                println!("expected error: {e}");
+                                e
+                            })?;
+
+                            match attrs.meta {
+                                EntryPointArgMeta::Builtin(builtin) => {
+                                    body.push(
+                                        quote! { let _binding = Some(::embers_transpile::__private::naga::Binding::BuiltIn(#builtin)); },
+                                    );
+                                }
+                                EntryPointArgMeta::Global(meta) => {
+                                    is_global = true;
+
+                                    let address_space = match meta.address_space {
+                                        AddressSpace::Function => {
+                                            quote! { ::embers_transpile::__private::address_space::Function }
+                                        }
+                                        AddressSpace::Private => {
+                                            quote! { ::embers_transpile::__private::address_space::Private }
+                                        }
+                                        AddressSpace::WorkGroup => {
+                                            quote! { ::embers_transpile::__private::address_space::WorkGroup }
+                                        }
+                                        AddressSpace::Uniform => {
+                                            quote! { ::embers_transpile::__private::address_space::Uniform }
+                                        }
+                                        AddressSpace::Storage(access) => {
+                                            match access {
+                                                StorageAccess::Read => {
+                                                    quote! { ::embers_transpile::__private::address_space::StorageRead }
+                                                }
+                                                StorageAccess::Write => {
+                                                    quote! { ::embers_transpile::__private::address_space::StorageReadWrite }
+                                                }
+                                            }
+                                        }
+                                        AddressSpace::Handle => {
+                                            quote! { ::embers_transpile::__private::AddressSpace::Handle }
+                                        }
+                                        AddressSpace::PushConstant => {
+                                            quote! { ::embers_transpile::__private::AddressSpace::PushConstant }
+                                        }
+                                    };
+
+                                    let binding_expr = if let Some(binding) = meta.binding {
+                                        let group = meta.group.unwrap_or_default();
+                                        quote! {
+                                            ::embers_transpile::__private::Some(::embers_transpile::__private::naga::ResourceBinding {
+                                                group: #group,
+                                                binding: #binding,
+                                            })
+                                        }
+                                    }
+                                    else {
+                                        quote! { ::embers_transpile::__private::None }
+                                    };
+
+                                    body.push(quote!{
+                                        _function_builder.module_builder.get_global_variable_or_add_it::<#ty, #address_space>(
+                                            #name,
+                                            #binding_expr,
+                                        );
+                                    })
+                                }
+                            }
+                        }
+                        else {
+                            body.push(quote! { let _binding = None; });
+                        }
+
+                        if !is_global {
+                            body.push(quote! {
+                                let #ident = _function_builder.add_input_named(#name, #ident, #is_mut, _binding)?;
+                            });
+                        }
                     }
                     syn::Pat::Wild(_) => {
-                        body.push(quote! {
-                            _function_builder.add_input_wild::<#ty>()?;
-                        });
+                        // pretty sure we don't have to do anything here
+                        //body.push(quote! {
+                        //    _function_builder.add_input_wild::<#ty>()?;
+                        //});
                     }
                     _ => panic!("unsupported"),
                 }

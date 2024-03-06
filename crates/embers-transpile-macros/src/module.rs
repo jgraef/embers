@@ -15,6 +15,7 @@ pub fn process_module(
     let mut output = TokenBuffer::default();
 
     if let Some((_, items)) = &module.content {
+        // todo: include shader_std::prelude::*
         for item in items {
             output.push(crate::item::process_item(item, None)?);
         }

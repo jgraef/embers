@@ -9,7 +9,6 @@ use std::{
 
 use color_eyre::eyre::Error;
 use embers_transpile::{
-    global,
     transpile,
     ShaderType,
 };
@@ -109,38 +108,19 @@ fn print_side_by_side(left: &impl Debug, right: &impl Debug) {
 
 mod shader {
     pub use embers_transpile::shader_std::prelude::*;
-
-    //global! {
-    //    #[embers(group = 0, binding = 0, address_space(storage(write)))]
-    //    static parameters: [i32];
-    //}
-
-    #[transpile]
-    fn bar(x: i32, y: i32) -> i32 {
-        x + y
-    }
-
-    #[transpile]
-    struct Foo(i32);
-
-    #[transpile]
-    impl Foo {
-        pub fn bar(&self, x: &i32) -> i32 {
-            *x + (*self).0
-        }
+    
+    trait Op<T> {
+        fn apply(lhs: T, rhs: T) -> T;
     }
 
     #[transpile(entrypoint)]
-    pub fn foo() {
-        //let mut a = 0;
-        //let b = &a;
-        //let c = *b;
-        //let z = bar(1, 2);
-        //let x = parameters[0];
-        //return;
-
-        //let foo = Foo { 0: 42 };
-        //let x = foo.bar();
+    pub fn map<T: ShaderType + Width, O: Op<T>>(
+        #[transpile(global(group = 0, binding = 0, address_space(storage(read))))]
+        parameters: [i32],
+        #[transpile(global(group = 0, binding = 1, address_space(storage(read))))] operand: [T],
+        #[transpile(global(group = 0, binding = 2, address_space(storage(write))))]
+        mut result: [T],
+    ) {
     }
 }
 
@@ -184,7 +164,7 @@ fn main() -> Result<(), Error> {
     let wgsl = naga::front::wgsl::parse_str(wgsl)?;
     //println!("{wgsl:#?}");
 
-    let transpiled = shader::foo()?;
+    let transpiled = shader::map()?;
     //println!("{:#?}", transpiled.naga);
 
     print_side_by_side(&wgsl, &transpiled.naga);

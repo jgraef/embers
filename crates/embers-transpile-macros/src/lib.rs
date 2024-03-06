@@ -1,15 +1,13 @@
 #![allow(dead_code)]
 
-mod args;
+mod closure;
 mod error;
 mod function;
-mod global;
 mod item;
 mod module;
 mod r#struct;
 mod r#trait;
 mod utils;
-mod closure;
 
 use closure::Closure;
 use darling::ast::NestedMeta;
@@ -19,8 +17,6 @@ use syn::{
     parse_macro_input,
     Item,
 };
-
-use crate::global::GlobalVar;
 
 #[proc_macro_error]
 #[proc_macro_attribute]
@@ -39,14 +35,6 @@ pub fn transpile(attrs: TokenStream, input: TokenStream) -> TokenStream {
         Err(e) => e.write_errors().into(),
     };
 
-    output.into()
-}
-
-#[proc_macro_error]
-#[proc_macro]
-pub fn global(input: TokenStream) -> TokenStream {
-    let global = parse_macro_input!(input as GlobalVar);
-    let output = global.process().unwrap();
     output.into()
 }
 

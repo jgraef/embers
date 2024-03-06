@@ -7,6 +7,7 @@ use naga::{
     Arena,
     EntryPoint,
     Function,
+    ResourceBinding,
     Type,
     UniqueArena,
 };
@@ -43,7 +44,7 @@ pub struct ModuleBuilder {
     pub(super) functions: Arena<Function>,
     entry_points: Vec<EntryPoint>,
     global_variables: Arena<naga::GlobalVariable>,
-    global_variable_by_type_id: HashMap<TypeId, GlobalVariableHandle>,
+    global_variable_by_type_id: HashMap<String, GlobalVariableHandle>,
 }
 
 impl Default for ModuleBuilder {
@@ -182,22 +183,24 @@ impl ModuleBuilder {
         Ok(())
     }
 
-    pub fn get_global_variable_or_add_it<G: GlobalVariable>(
+    pub fn get_global_variable_or_add_it<T: ShaderType + ?Sized, A: AddressSpace>(
         &mut self,
-    ) -> Result<GlobalVariableHandle, BuilderError> {
-        let type_id = TypeId::of::<G>();
-        if let Some(handle) = self.global_variable_by_type_id.get(&type_id) {
-            Ok(*handle)
+        name: impl Into<String>,
+        binding: Option<ResourceBinding>,
+    ) -> Result<GlobalVariable<T, A>, BuilderError> {
+        let name = name.into();
+        if let Some(handle) = self.global_variable_by_type_id.get(&name) {
+            Ok(GlobalVariable::new(*handle))
         }
         else {
-            let ty = self.get_type_by_id_or_add_it::<G::Type>()?;
+            let ty = self.get_type_by_id_or_add_it::<T>()?;
 
             let handle = if let Some(ty) = ty.get_data() {
                 let handle = self.global_variables.append(
                     naga::GlobalVariable {
-                        name: Some(G::NAME.to_owned()),
-                        space: G::AddressSpace::to_naga(),
-                        binding: G::BINDING,
+                        name: Some(name.clone()),
+                        space: A::to_naga(),
+                        binding,
                         ty,
                         init: None,
                     },
@@ -209,9 +212,9 @@ impl ModuleBuilder {
                 GlobalVariableHandle::Empty
             };
 
-            self.global_variable_by_type_id.insert(type_id, handle);
+            self.global_variable_by_type_id.insert(name, handle);
 
-            Ok(handle)
+            Ok(GlobalVariable::new(handle))
         }
     }
 

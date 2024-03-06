@@ -64,5 +64,11 @@ pub use crate::{
             LetBinding,
         },
     },
-    shader_std,
+    shader_std::{
+        self,
+        types::{
+            Array,
+            DynamicArray,
+        },
+    },
 };

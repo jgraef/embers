@@ -1,8 +1,21 @@
 use proc_macro2::TokenStream;
-use syn::{parenthesized, parse::{Parse, ParseStream}, punctuated::Punctuated, token::{Move, Paren}, Ident, Pat, Token};
+use syn::{
+    parenthesized,
+    parse::{
+        Parse,
+        ParseStream,
+    },
+    punctuated::Punctuated,
+    token::{
+        Move,
+        Paren,
+    },
+    Ident,
+    Pat,
+    Token,
+};
 
 use crate::error::Error;
-
 
 pub struct Capture {
     pub move_token: Token![move],
@@ -20,8 +33,6 @@ impl Parse for Capture {
         })
     }
 }
-
-
 
 pub struct Closure {
     pub capture: Option<Capture>,

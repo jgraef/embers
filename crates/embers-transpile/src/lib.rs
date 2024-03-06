@@ -11,10 +11,7 @@ extern crate self as embers_transpile;
 #[doc(hidden)]
 pub mod __private;
 
-pub use embers_transpile_macros::{
-    global,
-    transpile,
-};
+pub use embers_transpile_macros::transpile;
 
 pub use crate::builder::{
     module::Module,

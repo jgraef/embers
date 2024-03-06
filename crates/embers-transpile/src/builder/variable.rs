@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 
 use naga::{
     Expression,
+    Handle,
     LocalVariable,
     ResourceBinding,
 };
@@ -120,34 +121,56 @@ impl<T: ShaderType> Assign<T> for LetMutBinding<T> {
     }
 }
 
-pub trait GlobalVariable: 'static {
-    type Type: ShaderType + ?Sized;
-    type AddressSpace: AddressSpace;
-    const NAME: &'static str;
-    const BINDING: Option<ResourceBinding>;
-}
-
-impl<G: GlobalVariable> AsExpression<Pointer<G::Type, G::AddressSpace>> for G {
-    fn as_expression(
-        &self,
-        function_builder: &mut FunctionBuilder,
-    ) -> Result<ExpressionHandle<Pointer<G::Type, G::AddressSpace>>, BuilderError> {
-        let expression_handle = match function_builder
-            .module_builder
-            .get_global_variable_or_add_it::<G>()?
-        {
-            GlobalVariableHandle::Empty => ExpressionHandle::from_empty(),
-            GlobalVariableHandle::Handle(handle) => {
-                function_builder.add_expression(Expression::GlobalVariable(handle))
-            }
-        };
-
-        Ok(expression_handle)
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
 pub enum GlobalVariableHandle {
     Handle(naga::Handle<naga::GlobalVariable>),
     Empty,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct GlobalVariable<T: ?Sized, A> {
+    handle: GlobalVariableHandle,
+    _ty: PhantomData<T>,
+    _address_space: PhantomData<A>,
+}
+
+impl<T: ?Sized, A> GlobalVariable<T, A> {
+    pub fn new(handle: GlobalVariableHandle) -> Self {
+        Self {
+            handle,
+            _ty: PhantomData,
+            _address_space: PhantomData,
+        }
+    }
+
+    pub fn from_handle(handle: naga::Handle<naga::GlobalVariable>) -> Self {
+        Self {
+            handle: GlobalVariableHandle::Handle(handle),
+            _ty: PhantomData,
+            _address_space: PhantomData,
+        }
+    }
+
+    pub fn from_empty() -> Self {
+        Self {
+            handle: GlobalVariableHandle::Empty,
+            _ty: PhantomData,
+            _address_space: PhantomData,
+        }
+    }
+}
+
+impl<T: ShaderType + ?Sized, A: AddressSpace> AsExpression<Pointer<T, A>> for GlobalVariable<T, A> {
+    fn as_expression(
+        &self,
+        function_builder: &mut FunctionBuilder,
+    ) -> Result<ExpressionHandle<Pointer<T, A>>, BuilderError> {
+        let expression_handle = match &self.handle {
+            GlobalVariableHandle::Handle(handle) => {
+                function_builder.add_expression(Expression::GlobalVariable(*handle))
+            }
+            GlobalVariableHandle::Empty => ExpressionHandle::from_empty(),
+        };
+        Ok(expression_handle)
+    }
 }
