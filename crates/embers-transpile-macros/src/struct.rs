@@ -140,26 +140,29 @@ pub fn process_struct(
 
     let generated = quote! {
         #vis #struct_token #ident #generics {
-            _handle: ::embers_transpile::__private::ExpressionHandle<Self>,
+            handle: ::embers_transpile::__private::ExpressionHandle<Self>,
         }
 
         impl ::embers_transpile::__private::AsExpression<Self> for #ident {
             fn as_expression(
                 &self,
-                _function_builder: ::embers_transpile::__private::FunctionBuilder
+                _function_builder: &mut ::embers_transpile::__private::FunctionBuilder
             ) -> ::embers_transpile::__private::Result<
                 ::embers_transpile::__private::ExpressionHandle<Self>,
                 ::embers_transpile::__private::BuilderError
             > {
-                Ok(self._handle.clone())
+                ::embers_transpile::__private::Ok(self.handle.clone())
             }
         }
 
         impl ::embers_transpile::__private::FromExpression<Self> for #ident {
             fn from_expression(
                 handle: ::embers_transpile::__private::ExpressionHandle<Self>,
-            ) -> ::embers_transpile::__private::ExpressionHandle<Self> {
-                Self { _handle: handle }
+            ) -> ::embers_transpile::__private::Result<
+                Self,
+                ::embers_transpile::__private::BuilderError
+            > {
+                ::embers_transpile::__private::Ok(Self { handle })
             }
         }
 
@@ -175,6 +178,8 @@ pub fn process_struct(
                 ::embers_transpile::__private::Ok(struct_builder.build::<Self>())
             }
         }
+
+        #(#accessor_impls)*
     };
 
     Ok(generated)

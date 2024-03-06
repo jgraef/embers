@@ -125,8 +125,8 @@ mod shader {
 
     #[transpile]
     impl Foo {
-        pub fn bar(&self) -> i32 {
-            (*self).0
+        pub fn bar(&self, x: &i32) -> i32 {
+            *x + (*self).0
         }
     }
 

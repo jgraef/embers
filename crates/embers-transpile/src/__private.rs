@@ -28,6 +28,7 @@ pub use crate::{
             AsExpression,
             ExpressionHandle,
             FromExpression,
+            IntoExpression,
         },
         function::{
             CallGenerator,

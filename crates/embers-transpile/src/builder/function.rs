@@ -39,6 +39,7 @@ use super::{
     },
     variable::LetMutBinding,
 };
+use crate::__private::IntoExpression;
 
 pub trait GenerateFunction: 'static {
     fn generate(&self, function_builder: &mut FunctionBuilder) -> Result<(), BuilderError>;
@@ -173,6 +174,22 @@ impl<T: ?Sized> AsExpression<T> for PhantomReceiver<T> {
     }
 }
 
+impl<T: ?Sized> IntoExpression<T> for PhantomReceiver<T> {
+    fn into_expression(self) -> ExpressionHandle<T> {
+        self.handle
+    }
+}
+
+impl<T: ?Sized> Clone for PhantomReceiver<T> {
+    fn clone(&self) -> Self {
+        Self {
+            handle: self.handle,
+        }
+    }
+}
+
+impl<T: ?Sized> Copy for PhantomReceiver<T> {}
+
 pub struct PhantomReceiverPointer<T: ShaderType + ?Sized, A: AddressSpace> {
     handle: ExpressionHandle<Pointer<T, A>>,
 }
@@ -203,6 +220,24 @@ impl<T: ShaderType + ?Sized, A: AddressSpace> AsExpression<Pointer<T, A>>
         Ok(self.handle.clone())
     }
 }
+
+impl<T: ShaderType + ?Sized, A: AddressSpace> IntoExpression<Pointer<T, A>>
+    for PhantomReceiverPointer<T, A>
+{
+    fn into_expression(self) -> ExpressionHandle<Pointer<T, A>> {
+        self.handle
+    }
+}
+
+impl<T: ShaderType + ?Sized, A: AddressSpace> Clone for PhantomReceiverPointer<T, A> {
+    fn clone(&self) -> Self {
+        Self {
+            handle: self.handle,
+        }
+    }
+}
+
+impl<T: ShaderType + ?Sized, A: AddressSpace> Copy for PhantomReceiverPointer<T, A> {}
 
 pub struct FunctionBuilder<'a> {
     pub module_builder: &'a mut ModuleBuilder,
@@ -239,6 +274,7 @@ impl<'a> FunctionBuilder<'a> {
 
     pub fn add_input_receiver<This: ShaderType>(
         &mut self,
+        _: ExpressionHandle<This>,
     ) -> Result<FnInputBinding<This>, BuilderError> {
         assert!(self.inputs.is_empty());
 
@@ -262,6 +298,7 @@ impl<'a> FunctionBuilder<'a> {
     pub fn add_input_named<T: ShaderType>(
         &mut self,
         ident: impl ToString,
+        _: ExpressionHandle<T>,
         is_mut: bool,
         binding: Option<Binding>,
     ) -> Result<FnInputBinding<T>, BuilderError> {

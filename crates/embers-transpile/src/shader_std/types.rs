@@ -1,6 +1,15 @@
+use std::marker::PhantomData;
+
 use crate::{
     builder::{
-        expression::FromExpression,
+        error::BuilderError,
+        expression::{
+            AsExpression,
+            ExpressionHandle,
+            FromExpression,
+            IntoExpression,
+        },
+        function::FunctionBuilder,
         module::ModuleBuilder,
         r#type::{
             TypeHandle,
@@ -9,19 +18,13 @@ use crate::{
     },
     transpile,
     ShaderType,
-    __private::{
-        AsExpression,
-        BuilderError,
-        ExpressionHandle,
-        FunctionBuilder,
-    },
 };
 
 macro_rules! impl_primitive {
     ($ty:ident, $kind:ident, $width:expr) => {
         #[allow(non_camel_case_types)]
         pub struct $ty {
-            _handle: ExpressionHandle<Self>,
+            handle: ExpressionHandle<Self>,
         }
 
         impl ShaderType for $ty {
@@ -37,13 +40,19 @@ macro_rules! impl_primitive {
                 &self,
                 _function_builder: &mut FunctionBuilder,
             ) -> Result<ExpressionHandle<$ty>, BuilderError> {
-                Ok(self._handle.clone())
+                Ok(self.handle.clone())
             }
         }
 
         impl FromExpression<$ty> for $ty {
             fn from_expression(handle: ExpressionHandle<$ty>) -> Result<Self, BuilderError> {
-                Ok(Self { _handle: handle })
+                Ok(Self { handle })
+            }
+        }
+
+        impl IntoExpression<$ty> for $ty {
+            fn into_expression(self) -> ExpressionHandle<$ty> {
+                self.handle
             }
         }
 
@@ -155,22 +164,86 @@ impl FromExpression<()> for () {
     }
 }
 
+impl IntoExpression<()> for () {
+    fn into_expression(self) -> ExpressionHandle<()> {
+        ExpressionHandle::from_empty()
+    }
+}
+
 impl Width for () {
     const WIDTH: usize = 0;
 }
 
-impl<T: ShaderType + Width> ShaderType for [T] {
+pub struct DynamicArray<T: ShaderType + Width> {
+    handle: ExpressionHandle<Self>,
+    _ty: PhantomData<T>,
+}
+
+impl<T: ShaderType + Width> ShaderType for DynamicArray<T> {
     fn add_to_module(module_builder: &mut ModuleBuilder) -> Result<TypeHandle, BuilderError> {
         module_builder.add_dynamic_array::<T>()
     }
 }
 
-impl<T: ShaderType + Width, const N: usize> ShaderType for [T; N] {
+impl<T: ShaderType + Width> AsExpression<DynamicArray<T>> for DynamicArray<T> {
+    fn as_expression(
+        &self,
+        _function_builder: &mut FunctionBuilder,
+    ) -> Result<ExpressionHandle<Self>, BuilderError> {
+        Ok(self.handle.clone())
+    }
+}
+
+impl<T: ShaderType + Width> FromExpression<DynamicArray<T>> for DynamicArray<T> {
+    fn from_expression(handle: ExpressionHandle<Self>) -> Result<Self, BuilderError> {
+        Ok(Self {
+            handle,
+            _ty: PhantomData,
+        })
+    }
+}
+
+impl<T: ShaderType + Width> IntoExpression<DynamicArray<T>> for DynamicArray<T> {
+    fn into_expression(self) -> ExpressionHandle<DynamicArray<T>> {
+        self.handle
+    }
+}
+
+pub struct Array<T: ShaderType + Width, const N: usize> {
+    handle: ExpressionHandle<Self>,
+    _ty: PhantomData<T>,
+}
+
+impl<T: ShaderType + Width, const N: usize> ShaderType for Array<T, N> {
     fn add_to_module(module_builder: &mut ModuleBuilder) -> Result<TypeHandle, BuilderError> {
         module_builder.add_sized_array::<T, N>()
     }
 }
 
-impl<T: ShaderType + Width, const N: usize> Width for [T; N] {
+impl<T: ShaderType + Width, const N: usize> AsExpression<Array<T, N>> for Array<T, N> {
+    fn as_expression(
+        &self,
+        _function_builder: &mut FunctionBuilder,
+    ) -> Result<ExpressionHandle<Self>, BuilderError> {
+        Ok(self.handle.clone())
+    }
+}
+
+impl<T: ShaderType + Width, const N: usize> FromExpression<Array<T, N>> for Array<T, N> {
+    fn from_expression(handle: ExpressionHandle<Self>) -> Result<Self, BuilderError> {
+        Ok(Self {
+            handle,
+            _ty: PhantomData,
+        })
+    }
+}
+
+impl<T: ShaderType + Width, const N: usize> IntoExpression<Array<T, N>> for Array<T, N> {
+    fn into_expression(self) -> ExpressionHandle<Array<T, N>> {
+        self.handle
+    }
+}
+
+impl<T: ShaderType + Width, const N: usize> Width for Array<T, N> {
     const WIDTH: usize = T::WIDTH * N;
 }

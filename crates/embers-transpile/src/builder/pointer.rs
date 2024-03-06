@@ -1,4 +1,7 @@
-use std::marker::PhantomData;
+use std::{
+    marker::PhantomData,
+    ops::Add,
+};
 
 use naga::{
     Expression,
@@ -7,7 +10,12 @@ use naga::{
 
 use super::{
     error::BuilderError,
-    expression::ExpressionHandle,
+    expression::{
+        AsExpression,
+        ExpressionHandle,
+        FromExpression,
+        IntoExpression,
+    },
     function::FunctionBuilder,
     module::ModuleBuilder,
     r#type::{
@@ -68,6 +76,8 @@ pub mod address_space {
 }
 
 pub struct Pointer<T: ShaderType + ?Sized, A: AddressSpace> {
+    // todo: put ExpressionHandle in here and implement AsExpression and FromExpression
+    handle: ExpressionHandle<Self>,
     _ty: PhantomData<T>,
     _space: PhantomData<A>,
 }
@@ -81,6 +91,31 @@ impl<T: ShaderType, A: AddressSpace> ShaderType for Pointer<T, A> {
         };
         let space = A::to_naga();
         Ok(module_builder.add_type::<Self>(None, naga::TypeInner::Pointer { base, space }))
+    }
+}
+
+impl<T: ShaderType, A: AddressSpace> AsExpression<Pointer<T, A>> for Pointer<T, A> {
+    fn as_expression(
+        &self,
+        _function_builder: &mut FunctionBuilder,
+    ) -> Result<ExpressionHandle<Pointer<T, A>>, BuilderError> {
+        Ok(self.handle.clone())
+    }
+}
+
+impl<T: ShaderType, A: AddressSpace> FromExpression<Pointer<T, A>> for Pointer<T, A> {
+    fn from_expression(handle: ExpressionHandle<Pointer<T, A>>) -> Result<Self, BuilderError> {
+        Ok(Self {
+            handle,
+            _ty: PhantomData,
+            _space: PhantomData,
+        })
+    }
+}
+
+impl<T: ShaderType, A: AddressSpace> IntoExpression<Pointer<T, A>> for Pointer<T, A> {
+    fn into_expression(self) -> ExpressionHandle<Self> {
+        self.handle
     }
 }
 

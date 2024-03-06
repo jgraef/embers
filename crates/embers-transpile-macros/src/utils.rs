@@ -57,36 +57,69 @@ impl NameGen {
     }
 }
 
-pub fn map_types(ty: &mut Type) {
+#[derive(Clone, Copy, Debug)]
+pub enum TypePosition {
+    Argument,
+    ReturnType,
+    Path,
+    Other,
+}
+
+pub fn map_types(ty: &mut Type, position: TypePosition) {
     match ty {
-        Type::Array(type_array) => map_types(&mut type_array.elem),
+        Type::Array(type_array) => {
+            let mut elem = type_array.elem.clone();
+            map_types(&mut elem, position);
+            let len = &type_array.len;
+            *ty = syn::parse2::<Type>(quote! {
+                ::embers_transpile::__private::Array<#elem, { len }>
+            })
+            .unwrap();
+        }
         Type::BareFn(bare_fn) => todo!(),
-        Type::Group(group) => map_types(&mut group.elem),
+        Type::Group(group) => map_types(&mut group.elem, position),
         Type::ImplTrait(_) => {}
         Type::Infer(_) => {}
         Type::Macro(_) => {}
         Type::Never(_) => {}
-        Type::Paren(paren) => map_types(&mut paren.elem),
+        Type::Paren(paren) => map_types(&mut paren.elem, position),
         Type::Path(path) => {
             if let Some(qself) = &mut path.qself {
-                map_types(&mut qself.ty);
+                map_types(&mut qself.ty, TypePosition::Path);
             }
         }
         Type::Ptr(_) => panic!("pointers are not supported"),
         Type::Reference(reference) => {
-            let ty = &reference.elem;
-            let space = map_lifetime_to_address_space(reference.lifetime.as_ref());
-            let ptr_type = syn::parse2::<Type>(quote! {
-                ::embers_transpile::__private::Pointer<#ty, #space>
+            let mut elem = reference.elem.clone();
+            map_types(&mut elem, position);
+            let space = match position {
+                TypePosition::Argument => {
+                    quote! {
+                        impl ::embers_transpile::__private::AddressSpace
+                    }
+                }
+                TypePosition::Path => quote! { _ },
+                _ => map_lifetime_to_address_space(reference.lifetime.as_ref()),
+            };
+            *ty = syn::parse2::<Type>(quote! {
+                ::embers_transpile::__private::Pointer<#elem, #space>
             })
             .unwrap();
         }
-        Type::Slice(slice) => map_types(&mut slice.elem),
+        Type::Slice(slice) => {
+            let mut elem = slice.elem.clone();
+            map_types(&mut elem, position);
+            *ty = syn::parse2::<Type>(quote! {
+                ::embers_transpile::__private::DynamicArray<#elem>
+            })
+            .unwrap();
+        }
         Type::TraitObject(_) => panic!("trait objects are not supported"),
         Type::Tuple(tuple) => {
-            for elem in tuple.elems.iter_mut() {
-                map_types(elem);
-            }
+            //for elem in tuple.elems.iter_mut() {
+            //    map_types(elem, position);
+            //}
+            todo!();
         }
         Type::Verbatim(_) => {}
         _ => todo!(),

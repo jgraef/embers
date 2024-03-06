@@ -40,8 +40,10 @@ use crate::{
     error::Error,
     utils::{
         ident_to_literal,
+        map_types,
         NameGen,
         TokenBuffer,
+        TypePosition,
     },
 };
 
@@ -246,11 +248,38 @@ fn process_function(
     args: &FnMeta,
 ) -> Result<TokenStream, Error> {
     let (sig_transformed, ret) = transform_signature_to_generator(sig);
+    let mut bind_args = TokenBuffer::default();
+
+    // convert arguments to ExpressionHandles
+    for input in &sig.inputs {
+        match input {
+            FnArg::Receiver(receiver) => {
+                bind_args.push(quote! {
+                    let _self = embers_transpile::__private::IntoExpression::into_expression(self);
+                });
+            }
+            FnArg::Typed(pat_type) => {
+                match &*pat_type.pat {
+                    syn::Pat::Ident(pat_ident) => {
+                        let ident = &pat_ident.ident;
+                        bind_args.push(quote!{
+                            let #ident = embers_transpile::__private::IntoExpression::into_expression(#ident);
+                        });
+                    }
+                    syn::Pat::Wild(_) => {
+                        // nothing to do here
+                    }
+                    _ => panic!("unsupported"),
+                }
+            }
+        }
+    }
 
     let generated = if args.inline {
         let body = generate_function_body_inline(sig, ret, block)?;
         quote! {
             #vis #sig_transformed {
+                #bind_args
                 ::embers_transpile::__private::InlineCallGenerator::new(
                     move |mut _function_builder: &mut ::embers_transpile::__private::FunctionBuilder| {
                         #body
@@ -265,8 +294,9 @@ fn process_function(
 
         quote! {
             #vis #sig_transformed {
+                #bind_args
                 ::embers_transpile::__private::CallGenerator::new(
-                    |mut _function_builder: &mut ::embers_transpile::__private::FunctionBuilder| {
+                    move |mut _function_builder: &mut ::embers_transpile::__private::FunctionBuilder| {
                         #body
                     },
                     move |
@@ -284,12 +314,12 @@ fn process_function(
 }
 
 pub fn transform_signature_to_generator(sig: &Signature) -> (TokenStream, TokenStream) {
-    //let mut has_receiver = false;
-    //let mut args = vec![];
+    let mut has_receiver = false;
+    let mut inputs = vec![];
 
     let ident = &sig.ident;
 
-    /*for input in &sig.inputs {
+    for input in &sig.inputs {
         match input {
             FnArg::Receiver(receiver) => {
                 assert!(!has_receiver);
@@ -298,32 +328,32 @@ pub fn transform_signature_to_generator(sig: &Signature) -> (TokenStream, TokenS
                 let ty = &receiver.ty;
                 let ty = if receiver.reference.is_some() {
                     // todo: what address space?
-                    quote! { ::embers_transpile::__private::PhantomReceiverPointer<Self, ::embers_transpile::__private::address_space::Private> }
+                    quote! { ::embers_transpile::__private::PhantomReceiverPointer<Self, impl ::embers_transpile::__private::AddressSpace> }
                 }
                 else {
                     quote! { ::embers_transpile::__private::PhantomReceiver<Self> }
                 };
 
-                args.push(quote! { self: #ty });
+                inputs.push(quote! { self: #ty });
             }
             FnArg::Typed(pat_type) => {
                 let pat = &pat_type.pat;
-                let ty = &pat_type.ty;
+                let mut ty = pat_type.ty.clone();
+                map_types(&mut ty, TypePosition::Argument);
+
                 // todo: accept impl AsExpressionHandle
-                args.push(quote! { #pat: ::embers_transpile::__private::ExpressionHandle<#ty> });
+                inputs.push(quote! { #pat: #ty });
             }
         }
-    }*/
+    }
 
     let ret = match &sig.output {
         ReturnType::Default => quote! { () },
         ReturnType::Type(_, ty) => quote! { #ty },
     };
 
-    let inputs = &sig.inputs;
-
     let sig = quote! {
-        fn #ident(#inputs) -> impl ::embers_transpile::__private::GenerateCall<Return = #ret>
+        fn #ident(#(#inputs),*) -> impl ::embers_transpile::__private::GenerateCall<Return = #ret>
     };
 
     (sig, ret)
@@ -358,10 +388,12 @@ fn generate_function_body(
                     quote! { ::embers_transpile::__private::Pointer<Self, ::embers_transpile::__private::address_space::Private> }
                 }
                 else {
-                    quote! { Self }
+                    quote! { #ty }
                 };
 
-                body.push(quote! { let _self = _function_builder.add_input_receiver::<#ty>()?; });
+                body.push(quote! {
+                    let _self = _function_builder.add_input_receiver(_self)?;
+                });
             }
             FnArg::Typed(pat_type) => {
                 if entrypoint {
@@ -382,19 +414,20 @@ fn generate_function_body(
                     body.push(quote! { let _binding = None; });
                 }
 
-                let ty = &pat_type.ty;
+                let mut ty = pat_type.ty.clone();
+                map_types(&mut ty, TypePosition::Argument);
 
                 match &*pat_type.pat {
                     syn::Pat::Ident(pat_ident) => {
                         assert!(pat_ident.by_ref.is_none());
                         assert!(pat_ident.subpat.is_none());
 
-                        let name = ident_to_literal(&pat_ident.ident);
+                        let ident = &pat_ident.ident;
+                        let name = ident_to_literal(ident);
                         let is_mut = pat_ident.mutability.is_some();
 
-                        let var = &pat_ident.ident;
                         body.push(quote! {
-                            let #var = _function_builder.add_input_named::<#ty>(#name, #is_mut, _binding)?;
+                            let #ident = _function_builder.add_input_named(#name, #ident, #is_mut, _binding)?;
                         });
                     }
                     syn::Pat::Wild(_) => {
@@ -757,6 +790,11 @@ fn process_expr(
                     let #bind = ::embers_transpile::__private::Into::into(#bind);
                 });
             }
+            else {
+                arg_binds.push(quote! {
+                    let #bind = ::embers_transpile::__private::FromExpression::from_expression(#bind)?;
+                });
+            }
             arg_names.push(bind);
         }
 
@@ -790,6 +828,11 @@ fn process_expr(
             if i == 0 {
                 arg_binds.push(quote! {
                     let #bind = ::embers_transpile::__private::Into::into(#bind);
+                });
+            }
+            else {
+                arg_binds.push(quote! {
+                    let #bind = ::embers_transpile::__private::FromExpression::from_expression(#bind)?;
                 });
             }
             arg_names.push(bind);

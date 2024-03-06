@@ -1,7 +1,7 @@
 use darling::ast::NestedMeta;
 use proc_macro2::TokenStream;
-use syn::Item;
 use quote::quote;
+use syn::Item;
 
 use crate::error::Error;
 

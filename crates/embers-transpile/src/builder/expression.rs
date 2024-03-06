@@ -80,6 +80,8 @@ impl<T: ?Sized> Clone for ExpressionHandle<T> {
     }
 }
 
+impl<T: ?Sized> Copy for ExpressionHandle<T> {}
+
 pub trait AsExpression<T: ?Sized> {
     fn as_expression(
         &self,
@@ -103,5 +105,15 @@ pub trait FromExpression<T: ?Sized>: Sized {
 impl<T: ?Sized> FromExpression<T> for ExpressionHandle<T> {
     fn from_expression(handle: ExpressionHandle<T>) -> Result<Self, BuilderError> {
         Ok(handle)
+    }
+}
+
+pub trait IntoExpression<T: ?Sized> {
+    fn into_expression(self) -> ExpressionHandle<T>;
+}
+
+impl<T: ?Sized> IntoExpression<T> for ExpressionHandle<T> {
+    fn into_expression(self) -> ExpressionHandle<T> {
+        self
     }
 }
