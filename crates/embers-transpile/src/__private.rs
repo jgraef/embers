@@ -27,6 +27,7 @@ pub use crate::{
         expression::{
             AsExpression,
             ExpressionHandle,
+            FromExpression,
         },
         function::{
             CallGenerator,

@@ -14,7 +14,6 @@ pub mod __private;
 pub use embers_transpile_macros::{
     global,
     transpile,
-    ShaderType,
 };
 
 pub use crate::builder::{

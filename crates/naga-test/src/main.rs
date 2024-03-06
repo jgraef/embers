@@ -108,23 +108,19 @@ fn print_side_by_side(left: &impl Debug, right: &impl Debug) {
 }
 
 mod shader {
-    use embers_transpile::{
-        global,
-        transpile,
-        ShaderType,
-    };
+    pub use embers_transpile::shader_std::prelude::*;
 
-    global! {
-        #[embers(group = 0, binding = 0, address_space(storage(write)))]
-        static parameters: [i32];
-    }
+    //global! {
+    //    #[embers(group = 0, binding = 0, address_space(storage(write)))]
+    //    static parameters: [i32];
+    //}
 
     #[transpile]
     fn bar(x: i32, y: i32) -> i32 {
         x + y
     }
 
-    #[derive(ShaderType)]
+    #[transpile]
     struct Foo(i32);
 
     #[transpile]

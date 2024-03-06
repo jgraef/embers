@@ -1,3 +1,4 @@
+use darling::ast::NestedMeta;
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{
@@ -8,12 +9,8 @@ use syn::{
 };
 
 use crate::{
-    args::{
-        ImplArgs,
-        TraitArgs,
-    },
     error::Error,
-    functions::{
+    function::{
         process_impl_function,
         transform_signature_to_generator,
     },
@@ -23,7 +20,10 @@ use crate::{
     },
 };
 
-pub fn process_trait(input: &ItemTrait, args: &TraitArgs) -> Result<TokenStream, Error> {
+pub fn process_trait(
+    input: &ItemTrait,
+    _attributes: Option<&[NestedMeta]>,
+) -> Result<TokenStream, Error> {
     let vis = &input.vis;
     let ident = &input.ident;
     let ident_literal = ident_to_literal(&ident);
@@ -53,7 +53,10 @@ pub fn process_trait(input: &ItemTrait, args: &TraitArgs) -> Result<TokenStream,
     Ok(output)
 }
 
-pub fn process_impl(input: &ItemImpl, args: &ImplArgs) -> Result<TokenStream, Error> {
+pub fn process_impl(
+    input: &ItemImpl,
+    _attributes: Option<&[NestedMeta]>,
+) -> Result<TokenStream, Error> {
     let trait_for = input.trait_.as_ref().map(|(not, trait_, for_token)| {
         assert!(not.is_none());
         quote! { #trait_ #for_token }
@@ -65,7 +68,7 @@ pub fn process_impl(input: &ItemImpl, args: &ImplArgs) -> Result<TokenStream, Er
     for item in &input.items {
         match item {
             ImplItem::Fn(fn_item) => {
-                output.push(process_impl_function(fn_item, args)?);
+                output.push(process_impl_function(fn_item, None)?);
             }
             _ => output.push(quote! { #item }),
         }

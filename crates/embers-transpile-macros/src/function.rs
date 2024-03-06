@@ -27,7 +27,6 @@ use syn::{
     Meta,
     Pat,
     Path,
-    Receiver,
     ReturnType,
     Signature,
     Stmt,
@@ -37,10 +36,7 @@ use syn::{
 };
 
 use crate::{
-    args::{
-        FnArgs,
-        ImplArgs,
-    },
+    args::FnMeta,
     error::Error,
     utils::{
         ident_to_literal,
@@ -194,7 +190,7 @@ impl EntrypointArgAttrs {
     }
 }
 
-pub fn process_entrypoint(input: &ItemFn, args: &FnArgs) -> Result<TokenStream, Error> {
+pub fn process_entrypoint(input: &ItemFn, _args: &FnMeta) -> Result<TokenStream, Error> {
     let vis = &input.vis;
     let sig = &input.sig;
     let block = &input.block;
@@ -221,23 +217,37 @@ pub fn process_entrypoint(input: &ItemFn, args: &FnArgs) -> Result<TokenStream, 
     Ok(generated)
 }
 
-pub fn process_bare_function(input: &ItemFn, args: &FnArgs) -> Result<TokenStream, Error> {
-    process_function(&input.vis, &input.sig, &input.block, args.inline)
+pub fn process_bare_function(
+    input: &ItemFn,
+    attributes: Option<&[NestedMeta]>,
+) -> Result<TokenStream, Error> {
+    let args = FnMeta::parse(attributes, &input.attrs)?;
+    if args.entrypoint {
+        assert!(!args.inline);
+        process_entrypoint(input, &args)
+    }
+    else {
+        process_function(&input.vis, &input.sig, &input.block, &args)
+    }
 }
 
-pub fn process_impl_function(input: &ImplItemFn, _args: &ImplArgs) -> Result<TokenStream, Error> {
-    process_function(&input.vis, &input.sig, &input.block, false)
+pub fn process_impl_function(
+    input: &ImplItemFn,
+    attributes: Option<&[NestedMeta]>,
+) -> Result<TokenStream, Error> {
+    let args = FnMeta::parse(attributes, &input.attrs)?;
+    process_function(&input.vis, &input.sig, &input.block, &args)
 }
 
 fn process_function(
     vis: &Visibility,
     sig: &Signature,
     block: &Block,
-    inline: bool,
+    args: &FnMeta,
 ) -> Result<TokenStream, Error> {
     let (sig_transformed, ret) = transform_signature_to_generator(sig);
 
-    let generated = if inline {
+    let generated = if args.inline {
         let body = generate_function_body_inline(sig, ret, block)?;
         quote! {
             #vis #sig_transformed {
@@ -274,12 +284,12 @@ fn process_function(
 }
 
 pub fn transform_signature_to_generator(sig: &Signature) -> (TokenStream, TokenStream) {
-    let mut has_receiver = false;
-    let mut args = vec![];
+    //let mut has_receiver = false;
+    //let mut args = vec![];
 
     let ident = &sig.ident;
 
-    for input in &sig.inputs {
+    /*for input in &sig.inputs {
         match input {
             FnArg::Receiver(receiver) => {
                 assert!(!has_receiver);
@@ -303,15 +313,17 @@ pub fn transform_signature_to_generator(sig: &Signature) -> (TokenStream, TokenS
                 args.push(quote! { #pat: ::embers_transpile::__private::ExpressionHandle<#ty> });
             }
         }
-    }
+    }*/
 
     let ret = match &sig.output {
         ReturnType::Default => quote! { () },
         ReturnType::Type(_, ty) => quote! { #ty },
     };
 
+    let inputs = &sig.inputs;
+
     let sig = quote! {
-        fn #ident(#(#args),*) -> impl ::embers_transpile::__private::GenerateCall<Return = #ret>
+        fn #ident(#inputs) -> impl ::embers_transpile::__private::GenerateCall<Return = #ret>
     };
 
     (sig, ret)

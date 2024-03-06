@@ -1,5 +1,4 @@
 use darling::{
-    ast::NestedMeta,
     FromAttributes,
     FromMeta,
 };
@@ -10,12 +9,9 @@ use syn::{
         Parse,
         ParseStream,
     },
-    parse_macro_input,
     Attribute,
     Expr,
     Ident,
-    Local,
-    Meta,
     Token,
     Type,
     Visibility,

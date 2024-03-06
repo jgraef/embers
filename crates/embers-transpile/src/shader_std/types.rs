@@ -1,5 +1,6 @@
 use crate::{
     builder::{
+        expression::FromExpression,
         module::ModuleBuilder,
         r#type::{
             TypeHandle,
@@ -8,16 +9,41 @@ use crate::{
     },
     transpile,
     ShaderType,
-    __private::BuilderError,
+    __private::{
+        AsExpression,
+        BuilderError,
+        ExpressionHandle,
+        FunctionBuilder,
+    },
 };
 
 macro_rules! impl_primitive {
     ($ty:ident, $kind:ident, $width:expr) => {
+        #[allow(non_camel_case_types)]
+        pub struct $ty {
+            _handle: ExpressionHandle<Self>,
+        }
+
         impl ShaderType for $ty {
             fn add_to_module(
                 module_builder: &mut ModuleBuilder,
             ) -> Result<TypeHandle, BuilderError> {
                 Ok(module_builder.add_scalar::<Self>(naga::ScalarKind::$kind))
+            }
+        }
+
+        impl AsExpression<$ty> for $ty {
+            fn as_expression(
+                &self,
+                _function_builder: &mut FunctionBuilder,
+            ) -> Result<ExpressionHandle<$ty>, BuilderError> {
+                Ok(self._handle.clone())
+            }
+        }
+
+        impl FromExpression<$ty> for $ty {
+            fn from_expression(handle: ExpressionHandle<$ty>) -> Result<Self, BuilderError> {
+                Ok(Self { _handle: handle })
             }
         }
 
@@ -113,6 +139,22 @@ impl ShaderType for () {
     }
 }
 
+impl AsExpression<()> for () {
+    fn as_expression(
+        &self,
+        _function_builder: &mut FunctionBuilder,
+    ) -> Result<ExpressionHandle<()>, BuilderError> {
+        Ok(ExpressionHandle::from_empty())
+    }
+}
+
+impl FromExpression<()> for () {
+    fn from_expression(handle: ExpressionHandle<()>) -> Result<Self, BuilderError> {
+        assert!(handle.is_empty());
+        Ok(())
+    }
+}
+
 impl Width for () {
     const WIDTH: usize = 0;
 }
@@ -122,22 +164,6 @@ impl<T: ShaderType + Width> ShaderType for [T] {
         module_builder.add_dynamic_array::<T>()
     }
 }
-
-/*#[transpile]
-impl<T: ShaderType + Width> Index<u32> for [T] {
-    type Output = T;
-
-    fn index(&self, index: u32) -> Self::Output {
-        ::embers_transpile::__private::intrinsic! {
-            let base = crate::__private::AsExpression::as_expression(&_self, function_builder)?.try_get_handle()?;
-            let index = crate::__private::AsExpression::as_expression(&index, function_builder)?.try_get_handle()?;
-            function_builder.add_expression::<Self::Output>(crate::__private::naga::Expression::Access {
-                base,
-                index,
-            })
-        }
-    }
-}*/
 
 impl<T: ShaderType + Width, const N: usize> ShaderType for [T; N] {
     fn add_to_module(module_builder: &mut ModuleBuilder) -> Result<TypeHandle, BuilderError> {

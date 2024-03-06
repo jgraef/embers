@@ -54,6 +54,10 @@ impl<T: ?Sized> ExpressionHandle<T> {
             }
         })
     }
+
+    pub fn is_empty(&self) -> bool {
+        matches!(self, Self::Empty { .. })
+    }
 }
 
 impl<T: 'static> ExpressionHandle<T> {
@@ -76,6 +80,13 @@ impl<T: ?Sized> Clone for ExpressionHandle<T> {
     }
 }
 
+pub trait AsExpression<T: ?Sized> {
+    fn as_expression(
+        &self,
+        function_builder: &mut FunctionBuilder,
+    ) -> Result<ExpressionHandle<T>, BuilderError>;
+}
+
 impl<T> AsExpression<T> for ExpressionHandle<T> {
     fn as_expression(
         &self,
@@ -85,9 +96,12 @@ impl<T> AsExpression<T> for ExpressionHandle<T> {
     }
 }
 
-pub trait AsExpression<T: ?Sized> {
-    fn as_expression(
-        &self,
-        function_builder: &mut FunctionBuilder,
-    ) -> Result<ExpressionHandle<T>, BuilderError>;
+pub trait FromExpression<T: ?Sized>: Sized {
+    fn from_expression(handle: ExpressionHandle<T>) -> Result<Self, BuilderError>;
+}
+
+impl<T: ?Sized> FromExpression<T> for ExpressionHandle<T> {
+    fn from_expression(handle: ExpressionHandle<T>) -> Result<Self, BuilderError> {
+        Ok(handle)
+    }
 }
