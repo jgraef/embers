@@ -1,7 +1,4 @@
-use std::{
-    marker::PhantomData,
-    ops::Add,
-};
+use std::marker::PhantomData;
 
 use naga::{
     Expression,
@@ -90,7 +87,7 @@ impl<T: ShaderType, A: AddressSpace> ShaderType for Pointer<T, A> {
             return Ok(module_builder.add_empty_type::<Self>());
         };
         let space = A::to_naga();
-        Ok(module_builder.add_type::<Self>(None, naga::TypeInner::Pointer { base, space }))
+        Ok(module_builder.add_naga_type::<Self>(None, naga::TypeInner::Pointer { base, space }))
     }
 }
 

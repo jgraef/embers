@@ -78,8 +78,7 @@ impl FnMeta {
     }
 }
 
-#[derive(Debug, EnumString)]
-#[strum(serialize_all = "snake_case")]
+#[derive(Debug, FromMeta)]
 enum BuiltinType {
     Position { invariant: bool },
     ViewIndex,
@@ -108,95 +107,70 @@ impl ToTokens for BuiltinType {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let out = match self {
             BuiltinType::Position { invariant } => {
-                quote! { ::embers_ricsl::__private::naga::BuiltIn::Position { invariant: #invariant } }
+                quote! { ::embers_transpile::__private::naga::BuiltIn::Position { invariant: #invariant } }
             }
             BuiltinType::ViewIndex => {
-                quote! { ::embers_ricsl::__private::naga::BuiltIn::ViewIndex }
+                quote! { ::embers_transpile::__private::naga::BuiltIn::ViewIndex }
             }
             BuiltinType::BaseInstance => {
-                quote! { ::embers_ricsl::__private::naga::BuiltIn::BaseInstance }
+                quote! { ::embers_transpile::__private::naga::BuiltIn::BaseInstance }
             }
             BuiltinType::BaseVertex => {
-                quote! { ::embers_ricsl::__private::naga::BuiltIn::BaseVertex }
+                quote! { ::embers_transpile::__private::naga::BuiltIn::BaseVertex }
             }
             BuiltinType::ClipDistance => {
-                quote! { ::embers_ricsl::__private::naga::BuiltIn::ClipDistance }
+                quote! { ::embers_transpile::__private::naga::BuiltIn::ClipDistance }
             }
             BuiltinType::CullDistance => {
-                quote! { ::embers_ricsl::__private::naga::BuiltIn::CullDistance }
+                quote! { ::embers_transpile::__private::naga::BuiltIn::CullDistance }
             }
             BuiltinType::InstanceIndex => {
-                quote! { ::embers_ricsl::__private::naga::BuiltIn::InstanceIndex }
+                quote! { ::embers_transpile::__private::naga::BuiltIn::InstanceIndex }
             }
             BuiltinType::PointSize => {
-                quote! { ::embers_ricsl::__private::naga::BuiltIn::PointSize }
+                quote! { ::embers_transpile::__private::naga::BuiltIn::PointSize }
             }
             BuiltinType::VertexIndex => {
-                quote! { ::embers_ricsl::__private::naga::BuiltIn::VertexIndex }
+                quote! { ::embers_transpile::__private::naga::BuiltIn::VertexIndex }
             }
             BuiltinType::FragDepth => {
-                quote! { ::embers_ricsl::__private::naga::BuiltIn::FragDepth }
+                quote! { ::embers_transpile::__private::naga::BuiltIn::FragDepth }
             }
             BuiltinType::PointCoord => {
-                quote! { ::embers_ricsl::__private::naga::BuiltIn::PointCoord }
+                quote! { ::embers_transpile::__private::naga::BuiltIn::PointCoord }
             }
             BuiltinType::FrontFacing => {
-                quote! { ::embers_ricsl::__private::naga::BuiltIn::FrontFacing }
+                quote! { ::embers_transpile::__private::naga::BuiltIn::FrontFacing }
             }
             BuiltinType::PrimitiveIndex => {
-                quote! { ::embers_ricsl::__private::naga::BuiltIn::PrimitiveIndex }
+                quote! { ::embers_transpile::__private::naga::BuiltIn::PrimitiveIndex }
             }
             BuiltinType::SampleIndex => {
-                quote! { ::embers_ricsl::__private::naga::BuiltIn::SampleIndex }
+                quote! { ::embers_transpile::__private::naga::BuiltIn::SampleIndex }
             }
             BuiltinType::SampleMask => {
-                quote! { ::embers_ricsl::__private::naga::BuiltIn::SampleMask }
+                quote! { ::embers_transpile::__private::naga::BuiltIn::SampleMask }
             }
             BuiltinType::GlobalInvocationId => {
-                quote! { ::embers_ricsl::__private::naga::BuiltIn::GlobalInvocationId }
+                quote! { ::embers_transpile::__private::naga::BuiltIn::GlobalInvocationId }
             }
             BuiltinType::LocalInvocationId => {
-                quote! { ::embers_ricsl::__private::naga::BuiltIn::LocalInvocationId }
+                quote! { ::embers_transpile::__private::naga::BuiltIn::LocalInvocationId }
             }
             BuiltinType::LocalInvocationIndex => {
-                quote! { ::embers_ricsl::__private::naga::BuiltIn::LocalInvocationIndex }
+                quote! { ::embers_transpile::__private::naga::BuiltIn::LocalInvocationIndex }
             }
             BuiltinType::WorkGroupId => {
-                quote! { ::embers_ricsl::__private::naga::BuiltIn::WorkGroupId }
+                quote! { ::embers_transpile::__private::naga::BuiltIn::WorkGroupId }
             }
             BuiltinType::WorkGroupSize => {
-                quote! { ::embers_ricsl::__private::naga::BuiltIn::WorkGroupSize }
+                quote! { ::embers_transpile::__private::naga::BuiltIn::WorkGroupSize }
             }
             BuiltinType::NumWorkGroups => {
-                quote! { ::embers_ricsl::__private::naga::BuiltIn::NumWorkGroups }
+                quote! { ::embers_transpile::__private::naga::BuiltIn::NumWorkGroups }
             }
         };
         tokens.extend(out);
-    }
-}
-
-impl FromMeta for BuiltinType {
-    fn from_list(items: &[NestedMeta]) -> darling::Result<Self> {
-        assert_eq!(items.len(), 1);
-
-        match &items[0] {
-            NestedMeta::Meta(meta) => {
-                match meta {
-                    Meta::Path(path) => {
-                        let ident = path
-                            .get_ident()
-                            .ok_or_else(|| darling::Error::custom("unexpected path"))?
-                            .to_string();
-                        Ok(BuiltinType::from_str(&ident).map_err(|e| darling::Error::custom(e))?)
-                    }
-                    Meta::List(list) => {
-                        todo!()
-                    }
-                    Meta::NameValue(_) => todo!(),
-                }
-            }
-            NestedMeta::Lit(_) => Err(darling::Error::custom("expected path")),
-        }
     }
 }
 
@@ -475,7 +449,11 @@ fn generate_function_body(
                             match attrs.meta {
                                 EntryPointArgMeta::Builtin(builtin) => {
                                     body.push(
-                                        quote! { let _binding = Some(::embers_transpile::__private::naga::Binding::BuiltIn(#builtin)); },
+                                        quote! {
+                                            let _binding = Some(::embers_transpile::__private::naga::Binding::BuiltIn(#builtin));
+                                            // this handle is only used by add_input_named to infer the type of the argument
+                                            let #ident = ::embers_transpile::__private::ExpressionHandle::<#ty>::from_empty();
+                                        },
                                     );
                                 }
                                 EntryPointArgMeta::Global(meta) => {

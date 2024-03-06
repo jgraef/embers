@@ -66,7 +66,7 @@ pub use crate::{
     },
     shader_std::{
         self,
-        types::{
+        types::array::{
             Array,
             DynamicArray,
         },

@@ -122,7 +122,7 @@ impl<'a> StructBuilder<'a> {
                 .struct_fields
                 .insert(TypeId::of::<T>(), self.field_map);
 
-            self.module_builder.add_type::<T>(
+            self.module_builder.add_naga_type::<T>(
                 Some(self.name),
                 naga::TypeInner::Struct {
                     members,

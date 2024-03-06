@@ -106,12 +106,23 @@ fn print_side_by_side(left: &impl Debug, right: &impl Debug) {
     }
 }
 
+#[transpile]
 mod shader {
-    pub use embers_transpile::shader_std::prelude::*;
-    
+    use embers_transpile::shader_std::{
+        ops::Add,
+        prelude::*,
+    };
+
     trait Op<T> {
         fn apply(lhs: T, rhs: T) -> T;
     }
+
+    //pub enum AddOp {}
+    //impl<T: Add> Op<T> for AddOp {
+    //    fn apply(lhs: T, rhs: T) -> T {
+    //        lhs + rhs
+    //    }
+    //}
 
     #[transpile(entrypoint)]
     pub fn map<T: ShaderType + Width, O: Op<T>>(
@@ -120,6 +131,7 @@ mod shader {
         #[transpile(global(group = 0, binding = 1, address_space(storage(read))))] operand: [T],
         #[transpile(global(group = 0, binding = 2, address_space(storage(write))))]
         mut result: [T],
+        #[transpile(builtin(global_invocation_id))] gid: vec3<u32>,
     ) {
     }
 }
@@ -133,41 +145,24 @@ fn main() -> Result<(), Error> {
     //println!("{:?}", Foo);
 
     let wgsl = r#"
-    //@group(0)
-    //@binding(0)
-    //var<storage, read> readable: array<i32>;
-    //@group(0)
-    //@binding(1)
-    //var<storage, read> writable: array<i32>;
-
-    struct Foo {
-        x: u32,
-    }
-
-    fn bar(_self: ptr<private, Foo>) -> i32 {
-        return (*_self).x;
-    }
-
+    @group(0)
+    @binding(0)
+    var<storage, read> readable: array<i32>;
+    
     @compute
     @workgroup_size(64, 1, 1)
     fn foo() {
-        //let x = parameters[0];
-        //writable[0] = 1;
-        //var a = 0;
-        //let b = &a;
-        //let c = *b;
-        let foo = Foo(42);
-        let x = bar(&foo);
+        let x = arrayLength(readable);
     }
     "#;
 
     let wgsl = naga::front::wgsl::parse_str(wgsl)?;
-    //println!("{wgsl:#?}");
+    println!("{wgsl:#?}");
 
-    let transpiled = shader::map()?;
+    //let transpiled = shader::map()?;
     //println!("{:#?}", transpiled.naga);
 
-    print_side_by_side(&wgsl, &transpiled.naga);
+    //print_side_by_side(&wgsl, &transpiled.naga);
     //diff_modules(wgsl, ricsl.naga);
 
     Ok(())

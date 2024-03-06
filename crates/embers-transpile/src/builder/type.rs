@@ -17,6 +17,23 @@ pub trait Width {
     const WIDTH: usize;
 }
 
+pub trait Scalar {
+    const KIND: naga::ScalarKind;
+}
+
+impl<T: Scalar + Width + 'static> ShaderType for T {
+    fn add_to_module(module_builder: &mut ModuleBuilder) -> Result<TypeHandle, BuilderError> {
+        Ok(module_builder.add_naga_type::<T>(None, naga::TypeInner::Scalar(scalar_to_naga::<T>())))
+    }
+}
+
+pub(crate) fn scalar_to_naga<T: Scalar + Width>() -> naga::Scalar {
+    naga::Scalar {
+        kind: <T as Scalar>::KIND,
+        width: <T as Width>::WIDTH as u8,
+    }
+}
+
 #[derive(Copy, Clone, Debug, Default)]
 pub struct TypeHandle {
     pub(crate) data: Option<Handle<Type>>,

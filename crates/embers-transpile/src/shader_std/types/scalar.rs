@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use crate::{
     builder::{
         error::BuilderError,
@@ -10,14 +8,12 @@ use crate::{
             IntoExpression,
         },
         function::FunctionBuilder,
-        module::ModuleBuilder,
         r#type::{
-            TypeHandle,
+            Scalar,
             Width,
         },
     },
     transpile,
-    ShaderType,
 };
 
 macro_rules! impl_primitive {
@@ -27,12 +23,12 @@ macro_rules! impl_primitive {
             handle: ExpressionHandle<Self>,
         }
 
-        impl ShaderType for $ty {
-            fn add_to_module(
-                module_builder: &mut ModuleBuilder,
-            ) -> Result<TypeHandle, BuilderError> {
-                Ok(module_builder.add_scalar::<Self>(naga::ScalarKind::$kind))
-            }
+        impl Scalar for $ty {
+            const KIND: naga::ScalarKind = naga::ScalarKind::$kind;
+        }
+
+        impl Width for $ty {
+            const WIDTH: usize = $width;
         }
 
         impl AsExpression<$ty> for $ty {
@@ -55,17 +51,13 @@ macro_rules! impl_primitive {
                 self.handle
             }
         }
-
-        impl Width for $ty {
-            const WIDTH: usize = $width;
-        }
     };
 }
 
 macro_rules! impl_unary {
     ($ty:ident, $trait:ident, $method:ident, $op:ident) => {
         #[transpile]
-        impl super::ops::$trait for $ty {
+        impl crate::shader_std::ops::$trait for $ty {
             type Output = Self;
 
             fn $method(self) -> Self::Output {
@@ -84,7 +76,7 @@ macro_rules! impl_unary {
 macro_rules! impl_binary {
     ($ty:ident, $trait:ident, $method:ident, $op:ident) => {
         #[transpile]
-        impl super::ops::$trait for $ty {
+        impl crate::shader_std::ops::$trait for $ty {
             type Output = $ty;
 
             fn $method(self, rhs: $ty) -> Self::Output {
@@ -141,109 +133,3 @@ impl_primitive!(bool, Bool, 1);
 impl_unary!(bool, Not, not, LogicalNot);
 impl_binary!(bool, BitAnd, bitand, LogicalAnd);
 impl_binary!(bool, BitOr, bitor, LogicalOr);
-
-impl ShaderType for () {
-    fn add_to_module(module_builder: &mut ModuleBuilder) -> Result<TypeHandle, BuilderError> {
-        Ok(module_builder.add_empty_type::<Self>())
-    }
-}
-
-impl AsExpression<()> for () {
-    fn as_expression(
-        &self,
-        _function_builder: &mut FunctionBuilder,
-    ) -> Result<ExpressionHandle<()>, BuilderError> {
-        Ok(ExpressionHandle::from_empty())
-    }
-}
-
-impl FromExpression<()> for () {
-    fn from_expression(handle: ExpressionHandle<()>) -> Result<Self, BuilderError> {
-        assert!(handle.is_empty());
-        Ok(())
-    }
-}
-
-impl IntoExpression<()> for () {
-    fn into_expression(self) -> ExpressionHandle<()> {
-        ExpressionHandle::from_empty()
-    }
-}
-
-impl Width for () {
-    const WIDTH: usize = 0;
-}
-
-pub struct DynamicArray<T: ShaderType + Width> {
-    handle: ExpressionHandle<Self>,
-    _ty: PhantomData<T>,
-}
-
-impl<T: ShaderType + Width> ShaderType for DynamicArray<T> {
-    fn add_to_module(module_builder: &mut ModuleBuilder) -> Result<TypeHandle, BuilderError> {
-        module_builder.add_dynamic_array::<T>()
-    }
-}
-
-impl<T: ShaderType + Width> AsExpression<DynamicArray<T>> for DynamicArray<T> {
-    fn as_expression(
-        &self,
-        _function_builder: &mut FunctionBuilder,
-    ) -> Result<ExpressionHandle<Self>, BuilderError> {
-        Ok(self.handle.clone())
-    }
-}
-
-impl<T: ShaderType + Width> FromExpression<DynamicArray<T>> for DynamicArray<T> {
-    fn from_expression(handle: ExpressionHandle<Self>) -> Result<Self, BuilderError> {
-        Ok(Self {
-            handle,
-            _ty: PhantomData,
-        })
-    }
-}
-
-impl<T: ShaderType + Width> IntoExpression<DynamicArray<T>> for DynamicArray<T> {
-    fn into_expression(self) -> ExpressionHandle<DynamicArray<T>> {
-        self.handle
-    }
-}
-
-pub struct Array<T: ShaderType + Width, const N: usize> {
-    handle: ExpressionHandle<Self>,
-    _ty: PhantomData<T>,
-}
-
-impl<T: ShaderType + Width, const N: usize> ShaderType for Array<T, N> {
-    fn add_to_module(module_builder: &mut ModuleBuilder) -> Result<TypeHandle, BuilderError> {
-        module_builder.add_sized_array::<T, N>()
-    }
-}
-
-impl<T: ShaderType + Width, const N: usize> AsExpression<Array<T, N>> for Array<T, N> {
-    fn as_expression(
-        &self,
-        _function_builder: &mut FunctionBuilder,
-    ) -> Result<ExpressionHandle<Self>, BuilderError> {
-        Ok(self.handle.clone())
-    }
-}
-
-impl<T: ShaderType + Width, const N: usize> FromExpression<Array<T, N>> for Array<T, N> {
-    fn from_expression(handle: ExpressionHandle<Self>) -> Result<Self, BuilderError> {
-        Ok(Self {
-            handle,
-            _ty: PhantomData,
-        })
-    }
-}
-
-impl<T: ShaderType + Width, const N: usize> IntoExpression<Array<T, N>> for Array<T, N> {
-    fn into_expression(self) -> ExpressionHandle<Array<T, N>> {
-        self.handle
-    }
-}
-
-impl<T: ShaderType + Width, const N: usize> Width for Array<T, N> {
-    const WIDTH: usize = T::WIDTH * N;
-}
