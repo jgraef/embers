@@ -9,7 +9,9 @@ mod module;
 mod r#struct;
 mod r#trait;
 mod utils;
+mod closure;
 
+use closure::Closure;
 use darling::ast::NestedMeta;
 use proc_macro::TokenStream;
 use proc_macro_error::proc_macro_error;
@@ -19,37 +21,6 @@ use syn::{
 };
 
 use crate::global::GlobalVar;
-
-/*
-#[derive(FromDeriveInput)]
-#[darling(attributes(ricsl), forward_attrs(allow, doc, cfg))]
-struct DeriveOpts {
-    ident: syn::Ident,
-    attrs: Vec<syn::Attribute>,
-    #[darling(default)]
-    args: StructArgs,
-}
-
-#[proc_macro_derive(ShaderType)]
-pub fn derive_shader_type(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
-
-    let opts = match DeriveOpts::from_derive_input(&input) {
-        Ok(v) => v,
-        Err(e) => {
-            return TokenStream::from(darling::Error::from(e).write_errors());
-        }
-    };
-
-    let output = match &input.data {
-        Data::Struct(s) => impl_shader_type_for_struct(&opts.ident, s, &opts.args).unwrap(),
-        Data::Enum(_) => panic!("enum not supported"),
-        Data::Union(_) => panic!("union not supported"),
-    };
-
-    output.into()
-}
-*/
 
 #[proc_macro_error]
 #[proc_macro_attribute]
@@ -74,12 +45,15 @@ pub fn transpile(attrs: TokenStream, input: TokenStream) -> TokenStream {
 #[proc_macro_error]
 #[proc_macro]
 pub fn global(input: TokenStream) -> TokenStream {
-    //let input: proc_macro2::TokenStream = input.into();
-
     let global = parse_macro_input!(input as GlobalVar);
     let output = global.process().unwrap();
+    output.into()
+}
 
-    //println!("{output}");
-
+#[proc_macro_error]
+#[proc_macro]
+pub fn closure(input: TokenStream) -> TokenStream {
+    let closure = parse_macro_input!(input as Closure);
+    let output = closure.process().unwrap();
     output.into()
 }
