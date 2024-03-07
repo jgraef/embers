@@ -65,7 +65,6 @@ impl<T: Width, const N: usize> Width for vec<T, N> {
     const WIDTH: usize = <T as Width>::WIDTH * N;
 }
 
-
 impl<T, const N: usize, const I: usize> FieldAccess<UnnamedFieldAccessor<I>> for vec<T, N>
 where
     Assert<{ I < N }>: IsTrue,
@@ -80,11 +79,10 @@ where
         let expr = base
             .get_handle()
             .map(|base| {
-                function_builder
-                    .add_expression(Expression::AccessIndex {
-                        base,
-                        index: I as _,
-                    })
+                function_builder.add_expression(Expression::AccessIndex {
+                    base,
+                    index: I as _,
+                })
             })
             .transpose()?
             .unwrap_or_else(|| ExpressionHandle::from_empty());
@@ -92,25 +90,22 @@ where
     }
 }
 
-
 macro_rules! vec_named_field_access {
     ($i:expr, $name:ident) => {
-        impl<T, const N: usize> FieldAccess<NamedFieldAccessor<{stringify!($name)}>> for vec<T, N>
-        where Assert<{ $i < N }>: IsTrue
+        impl<T, const N: usize> FieldAccess<NamedFieldAccessor<{ stringify!($name) }>> for vec<T, N>
+        where
+            Assert<{ $i < N }>: IsTrue,
         {
             type Type = <Self as FieldAccess<UnnamedFieldAccessor<$i>>>::Type;
             type Result = <Self as FieldAccess<UnnamedFieldAccessor<$i>>>::Result;
-        
+
             fn access(
                 function_builder: &mut FunctionBuilder,
                 base: ExpressionHandle<Self>,
             ) -> Result<Self::Result, BuilderError> {
-                FieldAccess::<UnnamedFieldAccessor<$i>>::access(
-                    function_builder,
-                    base,
-                )
+                FieldAccess::<UnnamedFieldAccessor<$i>>::access(function_builder, base)
             }
-        }                
+        }
     };
 }
 
@@ -119,11 +114,11 @@ vec_named_field_access!(1, y);
 vec_named_field_access!(2, z);
 vec_named_field_access!(3, w);
 
-
-
 #[transpile]
-impl<T: crate::shader_std::default::Default, const N: usize> crate::shader_std::default::Default for vec<T, N>
-where Self: ShaderType
+impl<T: crate::shader_std::default::Default, const N: usize> crate::shader_std::default::Default
+    for vec<T, N>
+where
+    Self: ShaderType,
 {
     fn default() -> Self {
         ::embers_transpile::__private::intrinsic! {
@@ -132,7 +127,6 @@ where Self: ShaderType
         }
     }
 }
-
 
 #[allow(non_camel_case_types)]
 pub struct mat<T, const N: usize, const M: usize> {
@@ -175,10 +169,11 @@ impl<T: Width, const N: usize, const M: usize> Width for mat<T, N, M> {
     const WIDTH: usize = <T as Width>::WIDTH * N;
 }
 
-
 #[transpile]
-impl<T: crate::shader_std::default::Default, const N: usize, const M: usize> crate::shader_std::default::Default for mat<T, N, M>
-where Self: ShaderType
+impl<T: crate::shader_std::default::Default, const N: usize, const M: usize>
+    crate::shader_std::default::Default for mat<T, N, M>
+where
+    Self: ShaderType,
 {
     fn default() -> Self {
         ::embers_transpile::__private::intrinsic! {

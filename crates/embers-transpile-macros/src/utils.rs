@@ -7,18 +7,16 @@ use proc_macro2::{
     TokenStream,
 };
 use quote::{
-    quote,
-    ToTokens,
+    quote, quote_spanned, ToTokens
 };
 use syn::{
-    parse::Parse,
-    Lifetime,
-    Type,
-    TypePath,
+    spanned::Spanned, Lifetime, Type
 };
 
 pub fn ident_to_literal(ident: &Ident) -> Literal {
-    Literal::string(&ident.to_string())
+    let mut literal = Literal::string(&ident.to_string());
+    literal.set_span(ident.span());
+    literal
 }
 
 #[derive(Default)]
@@ -62,7 +60,7 @@ pub enum TypePosition {
     Argument,
     ReturnType,
     Path,
-    Other,
+    Let,
 }
 
 pub fn map_types(ty: &mut Type, position: TypePosition) {
@@ -71,7 +69,8 @@ pub fn map_types(ty: &mut Type, position: TypePosition) {
             let mut elem = type_array.elem.clone();
             map_types(&mut elem, position);
             let len = &type_array.len;
-            *ty = syn::parse2::<Type>(quote! {
+            let span = ty.span();
+            *ty = syn::parse2::<Type>(quote_spanned! {span=>
                 ::embers_transpile::__private::Array<#elem, { len }>
             })
             .unwrap();
@@ -101,7 +100,8 @@ pub fn map_types(ty: &mut Type, position: TypePosition) {
                 TypePosition::Path => quote! { _ },
                 _ => map_lifetime_to_address_space(reference.lifetime.as_ref()),
             };
-            *ty = syn::parse2::<Type>(quote! {
+            let span = ty.span();
+            *ty = syn::parse2::<Type>(quote_spanned! {span=>
                 ::embers_transpile::__private::Pointer<#elem, #space>
             })
             .unwrap();
@@ -109,13 +109,20 @@ pub fn map_types(ty: &mut Type, position: TypePosition) {
         Type::Slice(slice) => {
             let mut elem = slice.elem.clone();
             map_types(&mut elem, position);
-            *ty = syn::parse2::<Type>(quote! {
+            let span = ty.span();
+            *ty = syn::parse2::<Type>(quote_spanned! {span=>
                 ::embers_transpile::__private::DynamicArray<#elem>
             })
             .unwrap();
         }
         Type::TraitObject(_) => panic!("trait objects are not supported"),
         Type::Tuple(tuple) => {
+            if tuple.elems.is_empty() {
+                let span = ty.span();
+                *ty = syn::parse2::<Type>(quote_spanned! {span=>
+                    ::embers_transpile::__private::Unit
+                }).unwrap();
+            }
             //for elem in tuple.elems.iter_mut() {
             //    map_types(elem, position);
             //}

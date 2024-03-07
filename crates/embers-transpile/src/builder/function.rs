@@ -1,5 +1,7 @@
 use std::{
-    any::TypeId, collections::HashMap, marker::PhantomData
+    any::TypeId,
+    collections::HashMap,
+    marker::PhantomData,
 };
 
 use naga::{
@@ -37,7 +39,10 @@ use super::{
     },
     variable::LetMutBinding,
 };
-use crate::{__private::IntoExpression, utils::try_all};
+use crate::{
+    __private::IntoExpression,
+    utils::try_all,
+};
 
 pub trait GenerateFunction: 'static {
     fn generate(&self, function_builder: &mut FunctionBuilder) -> Result<(), BuilderError>;
@@ -366,7 +371,10 @@ impl<'a> FunctionBuilder<'a> {
         Ok(())
     }
 
-    pub fn add_expression<T: ?Sized>(&mut self, expr: Expression) -> Result<ExpressionHandle<T>, BuilderError> {
+    pub fn add_expression<T: ?Sized>(
+        &mut self,
+        expr: Expression,
+    ) -> Result<ExpressionHandle<T>, BuilderError> {
         let is_const = self.expression_is_const(&expr)?;
         let handle = self.expressions.append(expr, Default::default());
         self.const_expressions.insert(handle, is_const);
@@ -424,12 +432,14 @@ impl<'a> FunctionBuilder<'a> {
     ) -> Result<LetMutBinding<T>, BuilderError> {
         let ty = self.module_builder.get_type_by_id_or_add_it::<T>()?;
         let let_mut = if let Some(ty) = ty.get_data() {
-            let init = init.map(|init| {
-                if !init.is_const() {
-                    return Err(BuilderError::NotConst);
-                }
-                init.try_get_handle()
-            }).transpose()?;
+            let init = init
+                .map(|init| {
+                    if !init.is_const() {
+                        return Err(BuilderError::NotConst);
+                    }
+                    init.try_get_handle()
+                })
+                .transpose()?;
             let handle = self.local_variables.append(
                 LocalVariable {
                     name: Some(name.to_string()),
@@ -500,18 +510,23 @@ impl<'a> FunctionBuilder<'a> {
         Ok(handle)
     }
 
-    pub(crate) fn expression_is_const(&mut self, expression: &Expression) -> Result<bool, BuilderError> {
+    pub(crate) fn expression_is_const(
+        &mut self,
+        expression: &Expression,
+    ) -> Result<bool, BuilderError> {
         fn expression_handle_is_const(
             handle: naga::Handle<Expression>,
             module_builder: &ModuleBuilder,
             expressions: &Arena<Expression>,
-            cache: &mut HashMap<Handle<Expression>, bool>
+            cache: &mut HashMap<Handle<Expression>, bool>,
         ) -> Result<bool, BuilderError> {
             if let Some(is_const) = cache.get(&handle) {
                 Ok(*is_const)
             }
             else {
-                let expression = expressions.try_get(handle).map_err(|_| BuilderError::BadHandle)?;
+                let expression = expressions
+                    .try_get(handle)
+                    .map_err(|_| BuilderError::BadHandle)?;
                 let is_const = expression_is_const(expression, module_builder, expressions, cache)?;
                 cache.insert(handle, is_const);
                 Ok(is_const)
@@ -522,64 +537,94 @@ impl<'a> FunctionBuilder<'a> {
             expression: &Expression,
             module_builder: &ModuleBuilder,
             expressions: &Arena<Expression>,
-            cache: &mut HashMap<Handle<Expression>, bool>
+            cache: &mut HashMap<Handle<Expression>, bool>,
         ) -> Result<bool, BuilderError> {
             let is_const = match expression {
                 Expression::Literal(_) => true,
                 Expression::Constant(_) => {
                     // todo we need to check override
                     false
-                },
-                Expression::ZeroValue(ty) => {
-                    module_builder.type_is_fixed_size((*ty).into())?
-                }, 
+                }
+                Expression::ZeroValue(ty) => module_builder.type_is_fixed_size((*ty).into())?,
                 Expression::Compose { components, .. } => {
-                    try_all(components.iter().map(|handle| expression_handle_is_const(*handle, module_builder, expressions, cache)))?
-                },
+                    try_all(components.iter().map(|handle| {
+                        expression_handle_is_const(*handle, module_builder, expressions, cache)
+                    }))?
+                }
                 Expression::Access { base, index } => {
                     expression_handle_is_const(*base, module_builder, expressions, cache)?
-                     && expression_handle_is_const(*index, module_builder, expressions, cache)?
-                },
+                        && expression_handle_is_const(*index, module_builder, expressions, cache)?
+                }
                 Expression::AccessIndex { base, .. } => {
                     expression_handle_is_const(*base, module_builder, expressions, cache)?
-                },
+                }
                 Expression::Splat { value, .. } => {
                     expression_handle_is_const(*value, module_builder, expressions, cache)?
-                },
+                }
                 Expression::Swizzle { vector, .. } => {
                     expression_handle_is_const(*vector, module_builder, expressions, cache)?
-                },
+                }
                 Expression::Unary { expr, .. } => {
                     expression_handle_is_const(*expr, module_builder, expressions, cache)?
-                },
+                }
                 Expression::Binary { left, right, .. } => {
                     expression_handle_is_const(*left, module_builder, expressions, cache)?
-                     && expression_handle_is_const(*right, module_builder, expressions, cache)?
-                },
-                Expression::Select { condition, accept, reject } => {
+                        && expression_handle_is_const(*right, module_builder, expressions, cache)?
+                }
+                Expression::Select {
+                    condition,
+                    accept,
+                    reject,
+                } => {
                     expression_handle_is_const(*condition, module_builder, expressions, cache)?
-                    && expression_handle_is_const(*accept, module_builder, expressions, cache)?
-                    && expression_handle_is_const(*reject, module_builder, expressions, cache)?
-                },
+                        && expression_handle_is_const(*accept, module_builder, expressions, cache)?
+                        && expression_handle_is_const(*reject, module_builder, expressions, cache)?
+                }
                 Expression::Relational { argument, .. } => {
                     expression_handle_is_const(*argument, module_builder, expressions, cache)?
-                },
-                Expression::Math { arg, arg1, arg2, arg3, .. } => {
+                }
+                Expression::Math {
+                    arg,
+                    arg1,
+                    arg2,
+                    arg3,
+                    ..
+                } => {
                     expression_handle_is_const(*arg, module_builder, expressions, cache)?
-                    && arg1.map(|a| expression_handle_is_const(a, module_builder, expressions, cache)).transpose()?.unwrap_or(true)
-                    && arg2.map(|a| expression_handle_is_const(a, module_builder, expressions, cache)).transpose()?.unwrap_or(true)
-                    && arg3.map(|a| expression_handle_is_const(a, module_builder, expressions, cache)).transpose()?.unwrap_or(true)
-                },
+                        && arg1
+                            .map(|a| {
+                                expression_handle_is_const(a, module_builder, expressions, cache)
+                            })
+                            .transpose()?
+                            .unwrap_or(true)
+                        && arg2
+                            .map(|a| {
+                                expression_handle_is_const(a, module_builder, expressions, cache)
+                            })
+                            .transpose()?
+                            .unwrap_or(true)
+                        && arg3
+                            .map(|a| {
+                                expression_handle_is_const(a, module_builder, expressions, cache)
+                            })
+                            .transpose()?
+                            .unwrap_or(true)
+                }
                 Expression::As { expr, .. } => {
                     expression_handle_is_const(*expr, module_builder, expressions, cache)?
-                },
+                }
                 _ => false,
             };
             Ok(is_const)
         }
 
-        expression_is_const(expression, &self.module_builder, &self.expressions, &mut self.const_expressions)
-    }    
+        expression_is_const(
+            expression,
+            &self.module_builder,
+            &self.expressions,
+            &mut self.const_expressions,
+        )
+    }
 }
 
 pub struct FnInputBinding<T> {
@@ -622,4 +667,3 @@ impl<T: ShaderType> AsExpression<T> for FnInputBinding<T> {
         Ok(expr)
     }
 }
-

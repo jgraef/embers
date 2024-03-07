@@ -64,7 +64,7 @@ impl<T: ?Sized> ExpressionHandle<T> {
     pub fn promote_const(&mut self) {
         match self {
             ExpressionHandle::Handle { is_const, .. } => *is_const = true,
-            ExpressionHandle::Empty { _ty } => {},
+            ExpressionHandle::Empty { _ty } => {}
         }
     }
 
@@ -85,7 +85,9 @@ impl<T: 'static> ExpressionHandle<T> {
 impl<T: ?Sized> Clone for ExpressionHandle<T> {
     fn clone(&self) -> Self {
         match self {
-            Self::Handle { handle, is_const, .. } => {
+            Self::Handle {
+                handle, is_const, ..
+            } => {
                 Self::Handle {
                     handle: *handle,
                     is_const: *is_const,

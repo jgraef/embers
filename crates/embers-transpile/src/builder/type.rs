@@ -24,12 +24,6 @@ pub trait ScalarKind {
     const KIND: naga::ScalarKind;
 }
 
-impl<T: ScalarKind + Width + 'static> ShaderType for T {
-    fn add_to_module(module_builder: &mut ModuleBuilder) -> Result<TypeHandle, BuilderError> {
-        Ok(module_builder.add_naga_type::<T>(None, naga::TypeInner::Scalar(scalar_to_naga::<T>())))
-    }
-}
-
 pub(crate) fn scalar_to_naga<T: ScalarKind + Width>() -> naga::Scalar {
     naga::Scalar {
         kind: <T as ScalarKind>::KIND,

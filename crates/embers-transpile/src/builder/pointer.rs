@@ -126,7 +126,8 @@ impl<T: ShaderType, A: AddressSpace> ExpressionHandle<Pointer<T, A>> {
     ) -> Result<ExpressionHandle<T>, BuilderError> {
         let expr = match self {
             ExpressionHandle::Handle { handle, .. } => {
-                let expr = function_builder.add_expression(Expression::Load { pointer: *handle })?;
+                let expr =
+                    function_builder.add_expression(Expression::Load { pointer: *handle })?;
                 function_builder.add_emit(&expr)?;
                 expr
             }
@@ -142,8 +143,7 @@ impl<T: ShaderType, A: AddressSpace> ExpressionHandle<Pointer<T, A>> {
         function_builder: &mut FunctionBuilder,
     ) -> Result<(), BuilderError> {
         if let Some(handle) = self.get_handle() {
-            let value = value
-                .try_get_handle()?;
+            let value = value.try_get_handle()?;
             function_builder.add_statement(Statement::Store {
                 pointer: handle,
                 value,
@@ -215,7 +215,17 @@ impl<T: ShaderType, A: AddressSpace> AsPointer for DeferredDereference<T, A> {
 
     fn as_pointer(
         &self,
-        function_builder: &mut FunctionBuilder,
+        _function_builder: &mut FunctionBuilder,
+    ) -> Result<ExpressionHandle<Pointer<T, A>>, BuilderError> {
+        Ok(self.pointer)
+    }
+}
+
+// todo: do we want to do a load here instead? i think we do, right?
+impl<T: ShaderType, A: AddressSpace> AsExpression<Pointer<T, A>> for DeferredDereference<T, A> {
+    fn as_expression(
+        &self,
+        _function_builder: &mut FunctionBuilder,
     ) -> Result<ExpressionHandle<Pointer<T, A>>, BuilderError> {
         Ok(self.pointer)
     }

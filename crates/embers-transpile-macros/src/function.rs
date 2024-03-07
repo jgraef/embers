@@ -225,7 +225,7 @@ pub fn process_entrypoint(input: &ItemFn, _args: &FnMeta) -> Result<TokenStream,
     let generics = &sig.generics;
     let block = &input.block;
     let ident = &input.sig.ident;
-    let ret = quote! { () };
+    let ret = quote! { ::embers_transpile::__private::Unit };
 
     let body = generate_function_body(sig, ret, block, true)?;
 
@@ -357,8 +357,12 @@ pub fn transform_signature_to_generator(sig: &Signature) -> (TokenStream, TokenS
     }
 
     let ret = match &sig.output {
-        ReturnType::Default => quote! { () },
-        ReturnType::Type(_, ty) => quote! { #ty },
+        ReturnType::Default => quote! { ::embers_transpile::__private::Unit },
+        ReturnType::Type(_, ty) => {
+            let mut ty = ty.clone();
+            map_types(&mut ty, TypePosition::Argument);
+            quote! { #ty }
+        },
     };
 
     let generics = &sig.generics;
@@ -635,7 +639,7 @@ fn implicit_unit(
     expr.unwrap_or_else(|| {
         let var = name_gen.tmp_var("implicit_unit");
         output.push(quote! {
-            let #var = ::embers_transpile::__private::ExpressionHandle::<()>::from_empty();
+            let #var = ::embers_transpile::__private::ExpressionHandle::<::embers_transpile::__private::Unit>::from_empty();
         });
         ExprOut::from(var)
     })
@@ -665,7 +669,11 @@ fn process_stmt(
         Stmt::Local(local) => {
             let rhs = if let Some(rhs) = &local.init {
                 assert!(rhs.diverge.is_none());
-                Some(process_expr(&rhs.expr, output, name_gen)?)
+                let rhs = process_expr(&rhs.expr, output, name_gen)?;
+                output.push(quote!{
+                    let #rhs = ::embers_transpile::__private::AsExpression::as_expression(&#rhs, &mut _function_builder)?;
+                });
+                Some(rhs)
             }
             else {
                 None
@@ -674,6 +682,8 @@ fn process_stmt(
             let lhs = LetLhs::from_pat(&local.pat);
 
             let lhs_ty = if let Some(ty) = lhs.ty {
+                let mut ty = ty.clone();
+                map_types(&mut ty, TypePosition::Let);
                 quote! { #ty }
             }
             else {
@@ -794,7 +804,7 @@ fn process_macro(
         // just put this inplace, so we panic during code generation
         output.push(quote! {
             #macro_;
-            let #var = ::embers_transpile::__private::ExpressionHandle::<()>::from_phantom();
+            let #var = ::embers_transpile::__private::ExpressionHandle::<::embers_transpile::__private::Unit>::from_phantom();
         });
     }
     else {
@@ -1041,22 +1051,40 @@ fn process_expr(
         Expr::Index(index) => todo!("process_expr -> Expr::Index"),
         Expr::Lit(lit) => {
             match &lit.lit {
-                syn::Lit::Int(x) => {
-                    match x.suffix() {
-                        "i32" | "" => emit_lit!(i32, I32, x),
-                        "u32" => emit_lit!(u32, U32, x),
-                        suffix => panic!("unsupported integer literal suffix: {suffix}"),
-                    }
+                syn::Lit::Int(lit_int) => {
+                    let lit_ty = match lit_int.suffix() {
+                        "i32" => quote!{ ::embers_transpile::__private::i32 },
+                        "u32" => quote!{ ::embers_transpile::__private::u32 },
+                        "" => quote!{ ::embers_transpile::__private::AnyInteger },
+                        _ => panic!("unsupported integer literal: {lit_int}"),
+                    };
+
+                    let var = name_gen.tmp_var("lit");
+                    output.push(quote! {
+                        let #var = ::embers_transpile::__private::Literal::<#lit_ty>::new(#lit_int);
+                    });
+                    ExprOut::from(var)
                 }
-                syn::Lit::Float(x) => {
-                    match x.suffix() {
-                        "f32" | "" => emit_lit!(f32, F32, x),
-                        "f64" => emit_lit!(f64, F64, x),
-                        suffix => panic!("unsupported float literal suffix: {suffix}"),
-                    }
+                syn::Lit::Float(lit_float) => {
+                    let lit_ty = match lit_float.suffix() {
+                        "f32" => quote!{ ::embers_transpile::__private::f32 },
+                        "f64" => quote!{ ::embers_transpile::__private::f64 },
+                        "" => quote!{ ::embers_transpile::__private::AnyFloat },
+                        _ => panic!("unsupported float literal"),
+                    };
+
+                    let var = name_gen.tmp_var("lit");
+                    output.push(quote! {
+                        let #var = ::embers_transpile::__private::Literal::<#lit_ty>::new(#lit_float);
+                    });
+                    ExprOut::from(var)
                 }
-                syn::Lit::Bool(x) => {
-                    emit_lit!(bool, Bool, x)
+                syn::Lit::Bool(lit_bool) => {
+                    let var = name_gen.tmp_var("lit");
+                    output.push(quote! {
+                        let #var = ::embers_transpile::__private::Literal::<::embers_transpile::__private::bool>::new(#lit_bool);
+                    });
+                    ExprOut::from(var)
                 }
                 lit => panic!("unsupported: {lit:?}"),
             }
@@ -1122,36 +1150,33 @@ fn process_expr(
                 _function_builder.add_statement(::embers_transpile::__private::naga::Statement::Return {
                     value: _return_value,
                 });
-                let #out = ::embers_transpile::__private::ExpressionHandle::<()>::from_empty();
+                let #out = ::embers_transpile::__private::ExpressionHandle::<::embers_transpile::__private::Unit>::from_empty();
             });
             out.into()
         }
-        Expr::Struct(strct) => {
-            let ty = &strct.path;
+        Expr::Struct(struct_) => {
+            let path = &struct_.path;
+            assert!(!struct_.dot2_token.is_some());
+            assert!(!struct_.rest.is_some());
 
-            output.push(quote! {
-                let _struct_ty = _function_builder.module_builder.get_type_by_id_or_add_it::<#ty>()?.try_get_data()?;
-                let mut _field_exprs: ::embers_transpile::__private::Vec<::embers_transpile::__private::naga::Handle<::embers_transpile::__private::naga::Expression>> = vec![];
-            });
-
-            for field in &strct.fields {
-                let expr_var = process_expr(&field.expr, output, name_gen)?;
-                let field_accessor = field_accessor_for_member(&field.member);
-                output.push(quote! {
-                    let _field: ::embers_transpile::__private::ExpressionHandle<<#ty as ::embers_transpile::__private::FieldAccess::<{::embers_transpile::__private::FieldAccessor::#field_accessor}>>::Type> = #expr_var;
-                    if let Some(handle) = _field.get_handle() {
-                        _field_exprs.push(handle);
-                    }
+            let mut fields = TokenBuffer::default();
+            for field in &struct_.fields {
+                let member = &field.member;
+                let colon_token = &field.colon_token;
+                let expr = process_expr(&field.expr, output, name_gen)?;
+                fields.push(quote!{
+                    #member #colon_token ::embers_transpile::__private::AsExpression::as_expression(&#expr, &mut _function_builder)?,
                 });
             }
 
             let out = name_gen.tmp_var("compose");
-            output.push(quote! {
-                let #out = _function_builder.add_expression::<#ty>(::embers_transpile::__private::naga::Expression::Compose {
-                    ty: _struct_ty,
-                    components: _field_exprs,
-                })?;
-                _function_builder.add_emit(&#out)?;
+            output.push(quote!{
+                let #out = ::embers_transpile::__private::Compose::compose(
+                    &#path {
+                        #fields
+                    },
+                    &mut _function_builder,
+                )?;
             });
 
             out.into()

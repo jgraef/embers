@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-naga = { version = "0.19", features = ["wgsl-in", "serialize", "compact"] }
+naga = { version = "0.19", features = ["wgsl-in", "wgsl-out", "serialize", "compact"] }
 wgpu = "0.19"
 postcard = { version = "1.0", features = ["use-std"] }
 serde = "1.0"

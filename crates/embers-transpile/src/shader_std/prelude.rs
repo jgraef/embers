@@ -1,5 +1,5 @@
 pub use super::types::{
-    scalar::*,
+    primitive::*,
     vec::*,
 };
 pub use crate::{

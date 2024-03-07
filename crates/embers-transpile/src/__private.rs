@@ -51,9 +51,11 @@ pub use crate::{
             Pointer,
         },
         r#struct::{
+            access_struct_field,
             FieldAccess,
             NamedFieldAccessor,
             UnnamedFieldAccessor,
+            Compose,
         },
         r#type::{
             ShaderType,
@@ -63,12 +65,17 @@ pub use crate::{
             GlobalVariable,
             LetBinding,
         },
+        literal::{Literal, AnyFloat, AnyInteger},
     },
     shader_std::{
         self,
-        types::array::{
-            Array,
-            DynamicArray,
-        },
+        types::{
+            array::{
+                Array,
+                DynamicArray,
+            },
+            Unit,
+            primitive::{u32, i32, f32, f64, bool}
+        }
     },
 };

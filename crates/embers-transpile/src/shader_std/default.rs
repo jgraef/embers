@@ -1,11 +1,9 @@
 use embers_transpile_macros::transpile;
 
-
 #[transpile]
 pub trait Default {
     fn default() -> Self;
 }
-
 
 macro_rules! impl_default_with_zero_value {
     ($ty:ty) => {

@@ -1,38 +1,31 @@
-pub mod array;
-pub mod atomic;
-pub mod primitive;
-pub mod vec;
-
 use embers_transpile_macros::transpile;
 
-use crate::{
-    builder::{
-        error::BuilderError,
-        module::ModuleBuilder,
-        r#type::{
-            TypeHandle,
-            Width,
-        },
+use crate::builder::{
+    error::BuilderError,
+    module::ModuleBuilder,
+    r#type::{
+        ShaderType,
+        TypeHandle,
+        Width,
     },
-    ShaderType,
 };
 
-pub struct Unit {
-    _nonconstruct: (),
+pub struct PhantomData<T> {
+    _t: std::marker::PhantomData<T>,
 }
 
-impl ShaderType for Unit {
+impl<T: 'static> ShaderType for PhantomData<T> {
     fn add_to_module(module_builder: &mut ModuleBuilder) -> Result<TypeHandle, BuilderError> {
         Ok(module_builder.add_empty_type::<Self>())
     }
 }
 
-impl Width for Unit {
+impl<T> Width for PhantomData<T> {
     const WIDTH: usize = 0;
 }
 
 #[transpile]
-impl crate::shader_std::default::Default for Unit {
+impl<T: 'static> crate::shader_std::default::Default for PhantomData<T> {
     fn default() -> Self {
         ::embers_transpile::__private::intrinsic! {
             ::embers_transpile::__private::ExpressionHandle::<Self>::from_empty()

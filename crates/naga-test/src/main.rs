@@ -8,11 +8,19 @@ use std::{
 
 use color_eyre::eyre::Error;
 use embers_transpile::{
+    builder::function::FunctionBuilder,
     transpile,
     ShaderType,
 };
 use itertools::Itertools;
-use naga::{back::wgsl::WriterFlags, valid::{ValidationFlags, Validator}, Module};
+use naga::{
+    back::wgsl::WriterFlags,
+    valid::{
+        ValidationFlags,
+        Validator,
+    },
+    Module,
+};
 use owo_colors::{
     AnsiColors,
     OwoColorize,
@@ -148,6 +156,21 @@ mod shader {
     }
 }
 
+#[transpile]
+mod struct_test {
+    pub struct Foo {
+        pub x: u32,
+        y: i32,
+    }
+
+    fn test() {
+        let x = Foo {
+            x: 42,
+            y: 123,
+        };
+    }
+}
+
 fn main() -> Result<(), Error> {
     dotenvy::dotenv().ok();
     color_eyre::install()?;
@@ -172,7 +195,7 @@ fn main() -> Result<(), Error> {
     //println!("{wgsl:#?}");
 
     use embers_transpile::shader_std;
-    let transpiled = shader::map::<shader_std::types::scalar::i32, shader::AddOp>()?;
+    let transpiled = shader::map::<shader_std::types::primitive::i32, shader::AddOp>()?;
     println!("{:#?}", transpiled.naga);
     println!("");
     println!("{}", to_wgsl(&transpiled.naga)?);

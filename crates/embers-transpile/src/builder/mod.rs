@@ -7,3 +7,4 @@ pub mod pointer;
 pub mod r#struct;
 pub mod r#type;
 pub mod variable;
+pub mod literal;

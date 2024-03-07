@@ -1,7 +1,14 @@
 use crate::{
-    builder::r#type::{
-        ScalarKind,
-        Width,
+    builder::{
+        error::BuilderError,
+        module::ModuleBuilder,
+        r#type::{
+            scalar_to_naga,
+            ScalarKind,
+            ShaderType,
+            TypeHandle,
+            Width,
+        },
     },
     shader_std::default::impl_default_with_zero_value,
     transpile,
@@ -20,6 +27,17 @@ macro_rules! impl_primitive {
 
         impl Width for $ty {
             const WIDTH: usize = $width;
+        }
+
+        impl ShaderType for $ty {
+            fn add_to_module(
+                module_builder: &mut ModuleBuilder,
+            ) -> Result<TypeHandle, BuilderError> {
+                Ok(module_builder.add_naga_type::<Self>(
+                    Some(stringify!($ty).to_owned()),
+                    naga::TypeInner::Scalar(scalar_to_naga::<Self>()),
+                ))
+            }
         }
 
         impl_default_with_zero_value!($ty);
@@ -83,7 +101,7 @@ macro_rules! impl_scalar {
 macro_rules! impl_int {
     ($ty:ident, $kind:ident, $width:expr) => {
         impl_scalar!($ty, $kind, $width);
-        
+
         impl_unary!($ty, Not, not, BitwiseNot);
 
         impl_binary!($ty, BitAnd, bitand, And);

@@ -161,7 +161,8 @@ pub fn access_struct_field<T: ShaderType, U: ShaderType>(
                 .expect("field index out of bounds")
                 .map(|index| {
                     function_builder.add_expression(Expression::AccessIndex { base, index })
-                }).transpose()?
+                })
+                .transpose()?
         }
         _ => None,
     };
@@ -169,4 +170,8 @@ pub fn access_struct_field<T: ShaderType, U: ShaderType>(
     let handle = handle.unwrap_or_else(|| ExpressionHandle::from_empty());
 
     Ok(DeferredDereference::new(handle))
+}
+
+pub trait Compose {
+    fn compose(&self, function_builder: &mut FunctionBuilder) -> Result<ExpressionHandle<Self>, BuilderError>;
 }
