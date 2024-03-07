@@ -25,6 +25,7 @@ use super::{
         address_space,
         AddressSpace,
         AsPointer,
+        DeferredDereference,
         Pointer,
     },
     r#type::{
@@ -42,8 +43,13 @@ pub struct NamedFieldAccessor<const NAME: &'static str>;
 impl<const NAME: &'static str> FieldAccessor for NamedFieldAccessor<{ NAME }> {}
 
 pub trait FieldAccess<F: FieldAccessor> {
-    const INDEX: usize;
     type Type;
+    type Result: AsExpression<Self::Type>;
+
+    fn access(
+        function_builder: &mut FunctionBuilder,
+        base: ExpressionHandle<Self>,
+    ) -> Result<Self::Result, BuilderError>;
 }
 
 #[derive(Debug)]
@@ -135,64 +141,32 @@ impl<'a> StructBuilder<'a> {
     }
 }
 
-pub struct Field<T, U> {
+/// todo: how do we know the address space?
+pub fn access_struct_field<T: ShaderType, U: ShaderType>(
+    function_builder: &mut FunctionBuilder,
     base: ExpressionHandle<T>,
     index: usize,
-    _field_ty: PhantomData<U>,
-}
+) -> Result<DeferredDereference<U, address_space::Private>, BuilderError> {
+    let field_map = function_builder
+        .module_builder
+        .struct_fields
+        .get(&base.type_id());
 
-impl<T, U> Field<T, U> {
-    pub fn new<F: FieldAccessor>(base: ExpressionHandle<T>) -> Self
-    where
-        T: FieldAccess<F, Type = U>,
-    {
-        Self {
-            base,
-            index: T::INDEX,
-            _field_ty: PhantomData,
+    let base = base.get_handle();
+
+    let handle = match (field_map, base) {
+        (Some(field_map), Some(base)) => {
+            field_map
+                .get(index)
+                .expect("field index out of bounds")
+                .map(|index| {
+                    function_builder.add_expression(Expression::AccessIndex { base, index })
+                }).transpose()?
         }
-    }
-}
+        _ => None,
+    };
 
-impl<T: ShaderType, U: ShaderType> AsExpression<U> for Field<T, U> {
-    fn as_expression(
-        &self,
-        function_builder: &mut FunctionBuilder,
-    ) -> Result<ExpressionHandle<U>, BuilderError> {
-        let pointer = self.as_pointer(function_builder)?;
-        let expr = pointer.load(function_builder)?;
-        Ok(expr)
-    }
-}
+    let handle = handle.unwrap_or_else(|| ExpressionHandle::from_empty());
 
-impl<T: ShaderType, U: ShaderType> AsPointer for Field<T, U> {
-    // fixme: how do we know the appropriate address space here?
-    type Pointer = ExpressionHandle<Pointer<U, address_space::Private>>;
-
-    fn as_pointer(
-        &self,
-        function_builder: &mut FunctionBuilder,
-    ) -> Result<Self::Pointer, BuilderError> {
-        let field_map = function_builder
-            .module_builder
-            .struct_fields
-            .get(&self.base.type_id());
-        let base = self.base.get_handle();
-
-        let handle = match (field_map, base) {
-            (Some(field_map), Some(base)) => {
-                field_map
-                    .get(self.index)
-                    .expect("field index out of bounds")
-                    .map(|index| {
-                        function_builder.add_expression(Expression::AccessIndex { base, index })
-                    })
-            }
-            _ => None,
-        };
-
-        let handle = handle.unwrap_or_else(|| ExpressionHandle::from_empty());
-
-        Ok(handle)
-    }
+    Ok(DeferredDereference::new(handle))
 }

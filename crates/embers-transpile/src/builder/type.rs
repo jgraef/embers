@@ -1,4 +1,5 @@
 use naga::{
+    Expression,
     Function,
     Handle,
     Type,
@@ -6,6 +7,8 @@ use naga::{
 
 use super::{
     error::BuilderError,
+    expression::ExpressionHandle,
+    function::FunctionBuilder,
     module::ModuleBuilder,
 };
 

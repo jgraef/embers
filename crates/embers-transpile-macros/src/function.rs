@@ -574,9 +574,20 @@ fn generate_function_call(sig: &Signature) -> Result<TokenStream, Error> {
         }
     }
 
+    let num_args = arg_names.len();
+
     Ok(quote! {
         {
-            let _args = [
+            let _args: ::embers_transpile::__private::std::iter::Flatten<
+                ::embers_transpile::__private::std::array::IntoIter<
+                    ::embers_transpile::__private::Option<
+                        ::embers_transpile::__private::naga::Handle<
+                            ::embers_transpile::__private::naga::Expression
+                        >
+                    >,
+                    #num_args
+                >
+            > = [
                 #(::embers_transpile::__private::AsExpression::as_expression(&#arg_names, &mut _function_builder)?.get_handle()),*
             ].into_iter().flatten();
             _function_builder.add_call(
@@ -838,7 +849,7 @@ fn process_expr(
                     ::embers_transpile::__private::naga::Expression::Literal(
                         ::embers_transpile::__private::naga::Literal::$variant(#x)
                     )
-                );
+                )?;
             });
             ExprOut::from(var)
         }};
@@ -1021,8 +1032,7 @@ fn process_expr(
 
             let out = name_gen.tmp_var("field");
             output.push(quote! {
-                let #out = ::embers_transpile::__private::Field::new::<::embers_transpile::__private::#field_accessor>(#base);
-                //let #out = #private::AsExpression::as_expression(&_field, _function_builder).unwrap();
+                let #out = ::embers_transpile::__private::FieldAccess::<::embers_transpile::__private::#field_accessor>::access(&mut _function_builder, #base)?;
             });
             out.into()
         }
@@ -1140,7 +1150,7 @@ fn process_expr(
                 let #out = _function_builder.add_expression::<#ty>(::embers_transpile::__private::naga::Expression::Compose {
                     ty: _struct_ty,
                     components: _field_exprs,
-                });
+                })?;
                 _function_builder.add_emit(&#out)?;
             });
 

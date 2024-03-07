@@ -46,11 +46,11 @@ pub use crate::{
             address_space,
             AddressSpace,
             AsPointer,
+            DeferredDereference,
             Dereference,
             Pointer,
         },
         r#struct::{
-            Field,
             FieldAccess,
             NamedFieldAccessor,
             UnnamedFieldAccessor,

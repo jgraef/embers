@@ -3,6 +3,8 @@ pub mod atomic;
 pub mod scalar;
 pub mod vec;
 
+use embers_transpile_macros::transpile;
+
 use crate::{
     builder::{
         error::BuilderError,
@@ -23,4 +25,14 @@ impl ShaderType for () {
 
 impl Width for () {
     const WIDTH: usize = 0;
+}
+
+#[transpile]
+impl crate::shader_std::default::Default for ()
+{
+    fn default() -> Self {
+        ::embers_transpile::__private::intrinsic! {
+            ::embers_transpile::__private::ExpressionHandle::<Self>::from_empty()
+        }
+    }
 }

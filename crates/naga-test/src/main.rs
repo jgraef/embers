@@ -1,5 +1,4 @@
-#![feature(arbitrary_self_types)]
-
+#![feature(arbitrary_self_types, generic_const_exprs)]
 mod scratch;
 
 use std::{
@@ -13,7 +12,7 @@ use embers_transpile::{
     ShaderType,
 };
 use itertools::Itertools;
-use naga::Module;
+use naga::{back::wgsl::WriterFlags, valid::{ValidationFlags, Validator}, Module};
 use owo_colors::{
     AnsiColors,
     OwoColorize,
@@ -106,12 +105,24 @@ fn print_side_by_side(left: &impl Debug, right: &impl Debug) {
     }
 }
 
+fn to_wgsl(module: &naga::Module) -> Result<String, Error> {
+    let mut validator = Validator::new(Default::default(), Default::default());
+    let info = validator.validate(module)?;
+    let wgsl = naga::back::wgsl::write_string(module, &info, WriterFlags::EXPLICIT_TYPES)?;
+    Ok(wgsl)
+}
+
 #[transpile]
 mod shader {
-    use embers_transpile::shader_std::{
-        ops::Add,
-        prelude::*,
-    };
+    use std::ops::Add;
+
+    //fn index_range(global_id: vec3<u32>, num_workgroups: vec3<u32>) -> vec2<u32>
+    // {    // todo: use all 3 workgroup dimensions.
+    //    let id = global_id.y * (num_workgroups.x * WORKGROUP_SIZE_X) +
+    // global_id.x;    let start_index = i32(id * p_chunk_size());
+    //    let end_index = start_index + i32(p_chunk_size());
+    //    return vec2<i32>(start_index, end_index);
+    //}
 
     pub trait Op<T> {
         fn apply(lhs: T, rhs: T) -> T;
@@ -131,8 +142,9 @@ mod shader {
         #[transpile(global(group = 0, binding = 1, address_space(storage(read))))] operand: [T],
         #[transpile(global(group = 0, binding = 2, address_space(storage(write))))]
         mut result: [T],
-        #[transpile(builtin(global_invocation_id))] gid: vec3<u32>,
+        #[transpile(builtin(global_invocation_id))] global_id: vec3<u32>,
     ) {
+        let mut id = global_id.x;
     }
 }
 
@@ -156,11 +168,14 @@ fn main() -> Result<(), Error> {
     }
     "#;
 
-    let wgsl = naga::front::wgsl::parse_str(wgsl)?;
-    println!("{wgsl:#?}");
+    //let wgsl = naga::front::wgsl::parse_str(wgsl)?;
+    //println!("{wgsl:#?}");
 
-    //let transpiled = shader::map()?;
-    //println!("{:#?}", transpiled.naga);
+    use embers_transpile::shader_std;
+    let transpiled = shader::map::<shader_std::types::scalar::i32, shader::AddOp>()?;
+    println!("{:#?}", transpiled.naga);
+    println!("");
+    println!("{}", to_wgsl(&transpiled.naga)?);
 
     //print_side_by_side(&wgsl, &transpiled.naga);
     //diff_modules(wgsl, ricsl.naga);

@@ -1,15 +1,29 @@
 use std::marker::PhantomData;
 
+use embers_transpile_macros::transpile;
+use naga::Expression;
+
 use crate::{
     builder::{
         error::BuilderError,
+        expression::ExpressionHandle,
+        function::FunctionBuilder,
         module::ModuleBuilder,
+        r#struct::{
+            FieldAccess,
+            NamedFieldAccessor,
+            UnnamedFieldAccessor,
+        },
         r#type::{
             scalar_to_naga,
             ScalarKind,
             TypeHandle,
             Width,
         },
+    },
+    utils::{
+        Assert,
+        IsTrue,
     },
     ShaderType,
 };
@@ -51,6 +65,75 @@ impl<T: Width, const N: usize> Width for vec<T, N> {
     const WIDTH: usize = <T as Width>::WIDTH * N;
 }
 
+
+impl<T, const N: usize, const I: usize> FieldAccess<UnnamedFieldAccessor<I>> for vec<T, N>
+where
+    Assert<{ I < N }>: IsTrue,
+{
+    type Type = T;
+    type Result = ExpressionHandle<T>;
+
+    fn access(
+        function_builder: &mut FunctionBuilder,
+        base: ExpressionHandle<Self>,
+    ) -> Result<Self::Result, BuilderError> {
+        let expr = base
+            .get_handle()
+            .map(|base| {
+                function_builder
+                    .add_expression(Expression::AccessIndex {
+                        base,
+                        index: I as _,
+                    })
+            })
+            .transpose()?
+            .unwrap_or_else(|| ExpressionHandle::from_empty());
+        Ok(expr)
+    }
+}
+
+
+macro_rules! vec_named_field_access {
+    ($i:expr, $name:ident) => {
+        impl<T, const N: usize> FieldAccess<NamedFieldAccessor<{stringify!($name)}>> for vec<T, N>
+        where Assert<{ $i < N }>: IsTrue
+        {
+            type Type = <Self as FieldAccess<UnnamedFieldAccessor<$i>>>::Type;
+            type Result = <Self as FieldAccess<UnnamedFieldAccessor<$i>>>::Result;
+        
+            fn access(
+                function_builder: &mut FunctionBuilder,
+                base: ExpressionHandle<Self>,
+            ) -> Result<Self::Result, BuilderError> {
+                FieldAccess::<UnnamedFieldAccessor<$i>>::access(
+                    function_builder,
+                    base,
+                )
+            }
+        }                
+    };
+}
+
+vec_named_field_access!(0, x);
+vec_named_field_access!(1, y);
+vec_named_field_access!(2, z);
+vec_named_field_access!(3, w);
+
+
+
+#[transpile]
+impl<T: crate::shader_std::default::Default, const N: usize> crate::shader_std::default::Default for vec<T, N>
+where Self: ShaderType
+{
+    fn default() -> Self {
+        ::embers_transpile::__private::intrinsic! {
+            let ty_handle = function_builder.module_builder.get_type_by_id_or_add_it::<Self>()?.try_get_data()?;
+            function_builder.add_expression::<Self>(crate::__private::naga::Expression::ZeroValue(ty_handle))?
+        }
+    }
+}
+
+
 #[allow(non_camel_case_types)]
 pub struct mat<T, const N: usize, const M: usize> {
     _ty: PhantomData<T>,
@@ -90,4 +173,17 @@ impl_mat_n_m!(4, 4, mat4x4, Quad, Quad);
 
 impl<T: Width, const N: usize, const M: usize> Width for mat<T, N, M> {
     const WIDTH: usize = <T as Width>::WIDTH * N;
+}
+
+
+#[transpile]
+impl<T: crate::shader_std::default::Default, const N: usize, const M: usize> crate::shader_std::default::Default for mat<T, N, M>
+where Self: ShaderType
+{
+    fn default() -> Self {
+        ::embers_transpile::__private::intrinsic! {
+            let ty_handle = function_builder.module_builder.get_type_by_id_or_add_it::<Self>()?.try_get_data()?;
+            function_builder.add_expression::<Self>(crate::__private::naga::Expression::ZeroValue(ty_handle))?
+        }
+    }
 }

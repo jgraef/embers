@@ -1,4 +1,7 @@
-use std::marker::PhantomData;
+use std::{
+    marker::PhantomData,
+    ops::Add,
+};
 
 use naga::{
     Expression,
@@ -123,7 +126,7 @@ impl<T: ShaderType, A: AddressSpace> ExpressionHandle<Pointer<T, A>> {
     ) -> Result<ExpressionHandle<T>, BuilderError> {
         let expr = match self {
             ExpressionHandle::Handle { handle, .. } => {
-                let expr = function_builder.add_expression(Expression::Load { pointer: *handle });
+                let expr = function_builder.add_expression(Expression::Load { pointer: *handle })?;
                 function_builder.add_emit(&expr)?;
                 expr
             }
@@ -138,19 +141,16 @@ impl<T: ShaderType, A: AddressSpace> ExpressionHandle<Pointer<T, A>> {
         value: &ExpressionHandle<T>,
         function_builder: &mut FunctionBuilder,
     ) -> Result<(), BuilderError> {
-        match self {
-            ExpressionHandle::Handle { handle, _ty } => {
-                let value = value
-                    .get_handle()
-                    .expect("expected value to have a naga handle");
-                function_builder.add_statement(Statement::Store {
-                    pointer: *handle,
-                    value,
-                });
-            }
-            ExpressionHandle::Empty { _ty } => {
-                // we store a empty type (e.g. ()) by doing nothing
-            }
+        if let Some(handle) = self.get_handle() {
+            let value = value
+                .try_get_handle()?;
+            function_builder.add_statement(Statement::Store {
+                pointer: handle,
+                value,
+            });
+        }
+        else {
+            // we store a empty type (e.g. ()) by doing nothing
         }
 
         Ok(())
@@ -163,25 +163,60 @@ pub trait Dereference {
     fn dereference(
         &self,
         function_builder: &mut FunctionBuilder,
-    ) -> Result<Self::Target, BuilderError>;
+    ) -> Result<ExpressionHandle<Self::Target>, BuilderError>;
 }
 
 pub trait AsPointer {
-    type Pointer;
+    type Base: ShaderType;
+    type AddressSpace: AddressSpace;
 
     fn as_pointer(
         &self,
         function_builder: &mut FunctionBuilder,
-    ) -> Result<Self::Pointer, BuilderError>;
+    ) -> Result<ExpressionHandle<Pointer<Self::Base, Self::AddressSpace>>, BuilderError>;
+}
+
+impl<T: ShaderType, A: AddressSpace> AsPointer for ExpressionHandle<Pointer<T, A>> {
+    type Base = T;
+    type AddressSpace = A;
+
+    fn as_pointer(
+        &self,
+        _function_builder: &mut FunctionBuilder,
+    ) -> Result<ExpressionHandle<Pointer<Self::Base, Self::AddressSpace>>, BuilderError> {
+        Ok(*self)
+    }
 }
 
 impl<T: ShaderType, A: AddressSpace> Dereference for ExpressionHandle<Pointer<T, A>> {
-    type Target = ExpressionHandle<T>;
+    type Target = T;
 
     fn dereference(
         &self,
         function_builder: &mut FunctionBuilder,
-    ) -> Result<Self::Target, BuilderError> {
+    ) -> Result<ExpressionHandle<Self::Target>, BuilderError> {
         self.load(function_builder)
+    }
+}
+
+pub struct DeferredDereference<T: ShaderType, A: AddressSpace> {
+    pointer: ExpressionHandle<Pointer<T, A>>,
+}
+
+impl<T: ShaderType, A: AddressSpace> DeferredDereference<T, A> {
+    pub fn new(pointer: ExpressionHandle<Pointer<T, A>>) -> Self {
+        Self { pointer }
+    }
+}
+
+impl<T: ShaderType, A: AddressSpace> AsPointer for DeferredDereference<T, A> {
+    type Base = T;
+    type AddressSpace = A;
+
+    fn as_pointer(
+        &self,
+        function_builder: &mut FunctionBuilder,
+    ) -> Result<ExpressionHandle<Pointer<T, A>>, BuilderError> {
+        Ok(self.pointer)
     }
 }

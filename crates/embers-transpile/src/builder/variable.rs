@@ -91,14 +91,15 @@ impl<T: ShaderType> AsExpression<T> for LetMutBinding<T> {
 }
 
 impl<T: ShaderType> AsPointer for LetMutBinding<T> {
-    type Pointer = ExpressionHandle<Pointer<T, address_space::Function>>;
+    type Base = T;
+    type AddressSpace = address_space::Function;
 
     fn as_pointer(
         &self,
         function_builder: &mut FunctionBuilder,
-    ) -> Result<Self::Pointer, BuilderError> {
+    ) -> Result<ExpressionHandle<Pointer<T, Self::AddressSpace>>, BuilderError> {
         let expr = if let Some(handle) = self.handle {
-            function_builder.add_expression(Expression::LocalVariable(handle))
+            function_builder.add_expression(Expression::LocalVariable(handle))?
         }
         else {
             ExpressionHandle::from_empty()
@@ -167,7 +168,7 @@ impl<T: ShaderType + ?Sized, A: AddressSpace> AsExpression<Pointer<T, A>> for Gl
     ) -> Result<ExpressionHandle<Pointer<T, A>>, BuilderError> {
         let expression_handle = match &self.handle {
             GlobalVariableHandle::Handle(handle) => {
-                function_builder.add_expression(Expression::GlobalVariable(*handle))
+                function_builder.add_expression(Expression::GlobalVariable(*handle))?
             }
             GlobalVariableHandle::Empty => ExpressionHandle::from_empty(),
         };

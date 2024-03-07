@@ -21,6 +21,7 @@ use super::{
 pub enum ExpressionHandle<T: ?Sized> {
     Handle {
         handle: naga::Handle<Expression>,
+        is_const: bool,
         _ty: PhantomData<T>,
     },
     Empty {
@@ -32,6 +33,7 @@ impl<T: ?Sized> ExpressionHandle<T> {
     pub fn from_handle(handle: Handle<Expression>) -> Self {
         Self::Handle {
             handle,
+            is_const: false,
             _ty: PhantomData,
         }
     }
@@ -42,7 +44,7 @@ impl<T: ?Sized> ExpressionHandle<T> {
 
     pub fn get_handle(&self) -> Option<Handle<Expression>> {
         match self {
-            ExpressionHandle::Handle { handle, _ty } => Some(*handle),
+            ExpressionHandle::Handle { handle, .. } => Some(*handle),
             _ => None,
         }
     }
@@ -58,6 +60,20 @@ impl<T: ?Sized> ExpressionHandle<T> {
     pub fn is_empty(&self) -> bool {
         matches!(self, Self::Empty { .. })
     }
+
+    pub fn promote_const(&mut self) {
+        match self {
+            ExpressionHandle::Handle { is_const, .. } => *is_const = true,
+            ExpressionHandle::Empty { _ty } => {},
+        }
+    }
+
+    pub fn is_const(&self) -> bool {
+        match self {
+            ExpressionHandle::Handle { is_const, .. } => *is_const,
+            ExpressionHandle::Empty { _ty } => true,
+        }
+    }
 }
 
 impl<T: 'static> ExpressionHandle<T> {
@@ -69,9 +85,10 @@ impl<T: 'static> ExpressionHandle<T> {
 impl<T: ?Sized> Clone for ExpressionHandle<T> {
     fn clone(&self) -> Self {
         match self {
-            Self::Handle { handle, _ty } => {
+            Self::Handle { handle, is_const, .. } => {
                 Self::Handle {
                     handle: *handle,
+                    is_const: *is_const,
                     _ty: PhantomData,
                 }
             }

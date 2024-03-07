@@ -12,4 +12,8 @@ pub enum BuilderError {
     LetUnbound,
     #[error("invalid")]
     Invalid,
+    #[error("expression is not constant")]
+    NotConst,
+    #[error("bad handle")]
+    BadHandle,
 }

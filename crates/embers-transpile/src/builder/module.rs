@@ -176,4 +176,14 @@ impl ModuleBuilder {
         };
         Module { naga }
     }
+
+    pub fn type_is_fixed_size(&self, ty: TypeHandle) -> Result<bool, BuilderError> {
+        if let Some(handle) = ty.data {
+            let ty = self.types.get_handle(handle).map_err(|_| BuilderError::BadHandle)?;
+            Ok(!ty.inner.is_dynamically_sized(&self.types))
+        }
+        else {
+            Ok(true)
+        }
+    }
 }

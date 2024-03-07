@@ -2,11 +2,13 @@ use darling::ast::NestedMeta;
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{
+    token::Token,
     DataStruct,
     Fields,
     Generics,
     Ident,
     ItemStruct,
+    Type,
     TypeGenerics,
     WhereClause,
 };
@@ -97,6 +99,20 @@ pub fn process_struct(
     let mut struct_fields = vec![];
     let mut accessor_impls = vec![];
 
+    fn field_access_impl(ty: &Type, i: usize) -> TokenStream {
+        quote! {
+            type Type = ::embers_transpile::__private::Pointer<#ty, ::embers_transpile::__private::address_space::Private>;
+            type Result = ::embers_transpile::__private::DeferredDereference<#ty, ::embers_transpile::__private::address_space::Private>;
+
+            fn access(
+                function_builder: &mut ::embers_transpile::__private::FunctionBuilder,
+                base: ::embers_transpile::__private::ExpressionHandle<Self>,
+            ) -> ::embers_transpile::__private::Result<Self::Result, ::embers_transpile::__private::BuilderError> {
+                ::embers_transpile::__private::access_struct_field(function_builder, base, #i)
+            }
+        }
+    }
+
     match &struct_.fields {
         Fields::Unit => {}
         Fields::Named(named) => {
@@ -106,10 +122,7 @@ pub fn process_struct(
                 struct_fields.push(
                     quote! { struct_builder.add_named_field::<#field_type>(#field_name_literal)?; },
                 );
-                let field_access_impl = quote! {
-                    const INDEX: usize = #i;
-                    type Type = #field_type;
-                };
+                let field_access_impl = field_access_impl(field_type, i);
                 accessor_impls.push(
                     quote! {
                         impl ::embers_transpile::__private::FieldAccess<::embers_transpile::__private::UnnamedFieldAccessor<{#i}>> for #ident {
@@ -126,11 +139,11 @@ pub fn process_struct(
             for (i, field) in unnamed.unnamed.iter().enumerate() {
                 let field_type = &field.ty;
                 struct_fields.push(quote! { struct_builder.add_unnamed_field::<#field_type>()?; });
+                let field_access_impl = field_access_impl(field_type, i);
                 accessor_impls.push(
                     quote! {
                         impl ::embers_transpile::__private::FieldAccess<::embers_transpile::__private::UnnamedFieldAccessor<{#i}>> for #ident {
-                            const INDEX: usize = #i;
-                            type Type = #field_type;
+                            #field_access_impl
                         }
                     }
                 );

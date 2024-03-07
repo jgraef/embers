@@ -4,6 +4,7 @@
 
 pub mod builder;
 pub mod shader_std;
+mod utils;
 
 // hack to get the proc-macro working from this crate
 extern crate self as embers_transpile;

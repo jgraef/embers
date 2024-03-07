@@ -3,6 +3,7 @@ use crate::{
         ScalarKind,
         Width,
     },
+    shader_std::default::impl_default_with_zero_value,
     transpile,
 };
 
@@ -20,6 +21,8 @@ macro_rules! impl_primitive {
         impl Width for $ty {
             const WIDTH: usize = $width;
         }
+
+        impl_default_with_zero_value!($ty);
     };
 }
 
@@ -35,7 +38,7 @@ macro_rules! impl_unary {
                     function_builder.add_expression::<$ty>(crate::__private::naga::Expression::Unary {
                         op: crate::__private::naga::UnaryOperator::$op,
                         expr,
-                    })
+                    })?
                 }
             }
         }
@@ -56,7 +59,7 @@ macro_rules! impl_binary {
                         op: crate::__private::naga::BinaryOperator::$op,
                         left,
                         right,
-                    })
+                    })?
                 }
             }
         }
@@ -80,7 +83,7 @@ macro_rules! impl_scalar {
 macro_rules! impl_int {
     ($ty:ident, $kind:ident, $width:expr) => {
         impl_scalar!($ty, $kind, $width);
-
+        
         impl_unary!($ty, Not, not, BitwiseNot);
 
         impl_binary!($ty, BitAnd, bitand, And);
