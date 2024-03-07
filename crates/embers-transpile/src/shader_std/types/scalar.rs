@@ -1,17 +1,7 @@
 use crate::{
-    builder::{
-        error::BuilderError,
-        expression::{
-            AsExpression,
-            ExpressionHandle,
-            FromExpression,
-            IntoExpression,
-        },
-        function::FunctionBuilder,
-        r#type::{
-            Scalar,
-            Width,
-        },
+    builder::r#type::{
+        ScalarKind,
+        Width,
     },
     transpile,
 };
@@ -20,36 +10,15 @@ macro_rules! impl_primitive {
     ($ty:ident, $kind:ident, $width:expr) => {
         #[allow(non_camel_case_types)]
         pub struct $ty {
-            handle: ExpressionHandle<Self>,
+            _nonconstruct: (),
         }
 
-        impl Scalar for $ty {
+        impl ScalarKind for $ty {
             const KIND: naga::ScalarKind = naga::ScalarKind::$kind;
         }
 
         impl Width for $ty {
             const WIDTH: usize = $width;
-        }
-
-        impl AsExpression<$ty> for $ty {
-            fn as_expression(
-                &self,
-                _function_builder: &mut FunctionBuilder,
-            ) -> Result<ExpressionHandle<$ty>, BuilderError> {
-                Ok(self.handle.clone())
-            }
-        }
-
-        impl FromExpression<$ty> for $ty {
-            fn from_expression(handle: ExpressionHandle<$ty>) -> Result<Self, BuilderError> {
-                Ok(Self { handle })
-            }
-        }
-
-        impl IntoExpression<$ty> for $ty {
-            fn into_expression(self) -> ExpressionHandle<$ty> {
-                self.handle
-            }
         }
     };
 }

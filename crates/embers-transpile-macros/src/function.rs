@@ -275,39 +275,20 @@ fn process_function(
     block: &Block,
     args: &FnMeta,
 ) -> Result<TokenStream, Error> {
-    let (sig_transformed, ret) = transform_signature_to_generator(sig);
-    let mut bind_args = TokenBuffer::default();
+    let (sig_transformed, ret, has_receiver) = transform_signature_to_generator(sig);
 
-    // convert arguments to ExpressionHandles
-    for input in &sig.inputs {
-        match input {
-            FnArg::Receiver(receiver) => {
-                bind_args.push(quote! {
-                    let _self = embers_transpile::__private::IntoExpression::into_expression(self);
-                });
-            }
-            FnArg::Typed(pat_type) => {
-                match &*pat_type.pat {
-                    syn::Pat::Ident(pat_ident) => {
-                        let ident = &pat_ident.ident;
-                        bind_args.push(quote!{
-                            let #ident = embers_transpile::__private::IntoExpression::into_expression(#ident);
-                        });
-                    }
-                    syn::Pat::Wild(_) => {
-                        // nothing to do here
-                    }
-                    _ => panic!("unsupported"),
-                }
-            }
-        }
+    let unpack_receiver = if has_receiver {
+        quote! { let _self = self.unpack(); }
     }
+    else {
+        quote! {}
+    };
 
     let generated = if args.inline {
         let body = generate_function_body_inline(sig, ret, block)?;
         quote! {
             #vis #sig_transformed {
-                #bind_args
+                #unpack_receiver
                 ::embers_transpile::__private::InlineCallGenerator::new(
                     move |mut _function_builder: &mut ::embers_transpile::__private::FunctionBuilder| {
                         #body
@@ -322,7 +303,7 @@ fn process_function(
 
         quote! {
             #vis #sig_transformed {
-                #bind_args
+                #unpack_receiver
                 ::embers_transpile::__private::CallGenerator::new(
                     move |mut _function_builder: &mut ::embers_transpile::__private::FunctionBuilder| {
                         #body
@@ -341,7 +322,7 @@ fn process_function(
     Ok(generated)
 }
 
-pub fn transform_signature_to_generator(sig: &Signature) -> (TokenStream, TokenStream) {
+pub fn transform_signature_to_generator(sig: &Signature) -> (TokenStream, TokenStream, bool) {
     let mut has_receiver = false;
     let mut inputs = vec![];
 
@@ -370,7 +351,7 @@ pub fn transform_signature_to_generator(sig: &Signature) -> (TokenStream, TokenS
                 map_types(&mut ty, TypePosition::Argument);
 
                 // todo: accept impl AsExpressionHandle
-                inputs.push(quote! { #pat: #ty });
+                inputs.push(quote! { #pat: ::embers_transpile::__private::ExpressionHandle<#ty> });
             }
         }
     }
@@ -386,7 +367,7 @@ pub fn transform_signature_to_generator(sig: &Signature) -> (TokenStream, TokenS
         fn #ident #generics (#(#inputs),*) -> impl ::embers_transpile::__private::GenerateCall<Return = #ret>
     };
 
-    (sig, ret)
+    (sig, ret, has_receiver)
 }
 
 fn generate_function_body(
@@ -504,10 +485,10 @@ fn generate_function_body(
                                     };
 
                                     body.push(quote!{
-                                        _function_builder.module_builder.get_global_variable_or_add_it::<#ty, #address_space>(
+                                        let #ident = _function_builder.module_builder.get_global_variable_or_add_it::<#ty, #address_space>(
                                             #name,
                                             #binding_expr,
-                                        );
+                                        )?;
                                     })
                                 }
                             }
@@ -883,11 +864,6 @@ fn process_expr(
                     let #bind = ::embers_transpile::__private::Into::into(#bind);
                 });
             }
-            else {
-                arg_binds.push(quote! {
-                    let #bind = ::embers_transpile::__private::FromExpression::from_expression(#bind)?;
-                });
-            }
             arg_names.push(bind);
         }
 
@@ -921,11 +897,6 @@ fn process_expr(
             if i == 0 {
                 arg_binds.push(quote! {
                     let #bind = ::embers_transpile::__private::Into::into(#bind);
-                });
-            }
-            else {
-                arg_binds.push(quote! {
-                    let #bind = ::embers_transpile::__private::FromExpression::from_expression(#bind)?;
                 });
             }
             arg_names.push(bind);

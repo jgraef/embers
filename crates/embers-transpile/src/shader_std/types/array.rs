@@ -17,12 +17,11 @@ use crate::{
         },
     },
     shader_std::types::scalar::u32,
-    ShaderType,
     transpile,
+    ShaderType,
 };
 
 pub struct DynamicArray<T> {
-    handle: ExpressionHandle<Self>,
     _ty: PhantomData<T>,
 }
 
@@ -35,7 +34,6 @@ impl<T: ShaderType + Width> DynamicArray<T> {
         }
     }
 }
-
 
 impl<T: ShaderType + Width> ShaderType for DynamicArray<T> {
     fn add_to_module(module_builder: &mut ModuleBuilder) -> Result<TypeHandle, BuilderError> {
@@ -53,30 +51,6 @@ impl<T: ShaderType + Width> ShaderType for DynamicArray<T> {
                 stride: <T as Width>::WIDTH as _,
             },
         ))
-    }
-}
-
-impl<T: ShaderType + Width> AsExpression<DynamicArray<T>> for DynamicArray<T> {
-    fn as_expression(
-        &self,
-        _function_builder: &mut FunctionBuilder,
-    ) -> Result<ExpressionHandle<Self>, BuilderError> {
-        Ok(self.handle.clone())
-    }
-}
-
-impl<T: ShaderType + Width> FromExpression<DynamicArray<T>> for DynamicArray<T> {
-    fn from_expression(handle: ExpressionHandle<Self>) -> Result<Self, BuilderError> {
-        Ok(Self {
-            handle,
-            _ty: PhantomData,
-        })
-    }
-}
-
-impl<T: ShaderType + Width> IntoExpression<DynamicArray<T>> for DynamicArray<T> {
-    fn into_expression(self) -> ExpressionHandle<DynamicArray<T>> {
-        self.handle
     }
 }
 

@@ -1,6 +1,6 @@
 use darling::ast::NestedMeta;
 use proc_macro2::TokenStream;
-use quote::ToTokens;
+use quote::quote;
 use syn::ItemMod;
 
 use crate::{
@@ -19,7 +19,15 @@ pub fn process_module(
         for item in items {
             output.push(crate::item::process_item(item, None)?);
         }
-        Ok(output.into_token_stream())
+
+        let vis = &module.vis;
+        let mod_token = &module.mod_token;
+        let ident = &module.ident;
+        Ok(quote!{
+            #vis #mod_token #ident {
+                #output
+            }
+        })
     }
     else {
         panic!("#[transpile] is only allowed on modules with content");

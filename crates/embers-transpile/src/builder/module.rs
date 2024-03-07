@@ -21,10 +21,8 @@ use super::{
     pointer::AddressSpace,
     r#struct::StructBuilder,
     r#type::{
-        Scalar,
         ShaderType,
         TypeHandle,
-        Width,
     },
     variable::{
         GlobalVariable,

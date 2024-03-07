@@ -33,7 +33,7 @@ pub fn process_trait(
     for item in &input.items {
         match item {
             TraitItem::Fn(fn_item) => {
-                let (sig, ret) = transform_signature_to_generator(&fn_item.sig);
+                let (sig, ret, _) = transform_signature_to_generator(&fn_item.sig);
                 output.push(quote! { #sig; });
             }
             _ => output.push(quote! { #item }),

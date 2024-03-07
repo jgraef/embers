@@ -30,7 +30,6 @@ use super::{
         address_space,
         AddressSpace,
         AsPointer,
-        InAddressSpace,
         Pointer,
     },
     r#type::{
@@ -151,6 +150,12 @@ pub struct PhantomReceiver<T: ?Sized> {
     handle: ExpressionHandle<T>,
 }
 
+impl<T: ?Sized> PhantomReceiver<T> {
+    pub fn unpack(self) -> ExpressionHandle<T> {
+        self.handle
+    }
+}
+
 impl<T: ?Sized> std::ops::Deref for PhantomReceiver<T> {
     type Target = T;
 
@@ -192,6 +197,12 @@ impl<T: ?Sized> Copy for PhantomReceiver<T> {}
 
 pub struct PhantomReceiverPointer<T: ShaderType + ?Sized, A: AddressSpace> {
     handle: ExpressionHandle<Pointer<T, A>>,
+}
+
+impl<T: ShaderType + ?Sized, A: AddressSpace> PhantomReceiverPointer<T, A> {
+    pub fn unpack(self) -> ExpressionHandle<Pointer<T, A>> {
+        self.handle
+    }
 }
 
 impl<T: ShaderType + ?Sized, A: AddressSpace> std::ops::Deref for PhantomReceiverPointer<T, A> {
@@ -236,6 +247,33 @@ impl<T: ShaderType + ?Sized, A: AddressSpace> Clone for PhantomReceiverPointer<T
         }
     }
 }
+
+pub struct TypeHelper<T>(PhantomData<T>);
+
+impl<T> TypeHelper<T> {
+    pub fn from_argument(_: &T) -> Self {
+        Self(PhantomData)
+    }
+
+    pub fn from_receiver(_: &PhantomReceiver<T>) -> Self {
+        Self(PhantomData)
+    }
+
+    pub fn from_receiver_pointer<A: AddressSpace>(_: &PhantomReceiverPointer<T, A>) -> Self
+    where
+        T: ShaderType,
+    {
+        Self(PhantomData)
+    }
+}
+
+impl<T> Clone for TypeHelper<T> {
+    fn clone(&self) -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<T> Copy for TypeHelper<T> {}
 
 impl<T: ShaderType + ?Sized, A: AddressSpace> Copy for PhantomReceiverPointer<T, A> {}
 

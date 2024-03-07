@@ -113,16 +113,16 @@ mod shader {
         prelude::*,
     };
 
-    trait Op<T> {
+    pub trait Op<T> {
         fn apply(lhs: T, rhs: T) -> T;
     }
 
-    //pub enum AddOp {}
-    //impl<T: Add> Op<T> for AddOp {
-    //    fn apply(lhs: T, rhs: T) -> T {
-    //        lhs + rhs
-    //    }
-    //}
+    pub enum AddOp {}
+    impl<T: Add<Output = T>> Op<T> for AddOp {
+        fn apply(lhs: T, rhs: T) -> T {
+            lhs + rhs
+        }
+    }
 
     #[transpile(entrypoint)]
     pub fn map<T: ShaderType + Width, O: Op<T>>(

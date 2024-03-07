@@ -3,17 +3,10 @@ use std::marker::PhantomData;
 use crate::{
     builder::{
         error::BuilderError,
-        expression::{
-            AsExpression,
-            ExpressionHandle,
-            FromExpression,
-            IntoExpression,
-        },
-        function::FunctionBuilder,
         module::ModuleBuilder,
         r#type::{
             scalar_to_naga,
-            Scalar,
+            ScalarKind,
             TypeHandle,
             Width,
         },
@@ -23,13 +16,12 @@ use crate::{
 
 #[allow(non_camel_case_types)]
 pub struct vec<T, const N: usize> {
-    handle: ExpressionHandle<Self>,
     _ty: PhantomData<T>,
 }
 
 macro_rules! impl_vec_n {
     ($n:expr, $shorthand:ident, $size:ident) => {
-        impl<T: Scalar + Width + 'static> ShaderType for vec<T, $n> {
+        impl<T: ScalarKind + Width + 'static> ShaderType for vec<T, $n> {
             fn add_to_module(
                 module_builder: &mut ModuleBuilder,
             ) -> Result<TypeHandle, BuilderError> {
@@ -55,43 +47,18 @@ impl_vec_n!(2, vec2, Bi);
 impl_vec_n!(3, vec3, Tri);
 impl_vec_n!(4, vec4, Quad);
 
-impl<T, const N: usize> AsExpression<vec<T, N>> for vec<T, N> {
-    fn as_expression(
-        &self,
-        _function_builder: &mut FunctionBuilder,
-    ) -> Result<ExpressionHandle<Self>, BuilderError> {
-        Ok(self.handle.clone())
-    }
-}
-
-impl<T, const N: usize> FromExpression<vec<T, N>> for vec<T, N> {
-    fn from_expression(handle: ExpressionHandle<Self>) -> Result<Self, BuilderError> {
-        Ok(Self {
-            handle,
-            _ty: PhantomData,
-        })
-    }
-}
-
-impl<T, const N: usize> IntoExpression<vec<T, N>> for vec<T, N> {
-    fn into_expression(self) -> ExpressionHandle<vec<T, N>> {
-        self.handle
-    }
-}
-
 impl<T: Width, const N: usize> Width for vec<T, N> {
     const WIDTH: usize = <T as Width>::WIDTH * N;
 }
 
 #[allow(non_camel_case_types)]
 pub struct mat<T, const N: usize, const M: usize> {
-    handle: ExpressionHandle<Self>,
     _ty: PhantomData<T>,
 }
 
 macro_rules! impl_mat_n_m {
     ($n:expr, $m:expr, $shorthand:ident, $size_n:ident, $size_m:ident) => {
-        impl<T: Scalar + Width + 'static> ShaderType for mat<T, $n, $m> {
+        impl<T: ScalarKind + Width + 'static> ShaderType for mat<T, $n, $m> {
             fn add_to_module(
                 module_builder: &mut ModuleBuilder,
             ) -> Result<TypeHandle, BuilderError> {
@@ -120,30 +87,6 @@ impl_mat_n_m!(3, 4, mat3x4, Tri, Quad);
 impl_mat_n_m!(4, 2, mat4x2, Quad, Bi);
 impl_mat_n_m!(4, 3, mat4x3, Quad, Tri);
 impl_mat_n_m!(4, 4, mat4x4, Quad, Quad);
-
-impl<T, const N: usize, const M: usize> AsExpression<mat<T, N, M>> for mat<T, N, M> {
-    fn as_expression(
-        &self,
-        _function_builder: &mut FunctionBuilder,
-    ) -> Result<ExpressionHandle<Self>, BuilderError> {
-        Ok(self.handle.clone())
-    }
-}
-
-impl<T, const N: usize, const M: usize> FromExpression<mat<T, N, M>> for mat<T, N, M> {
-    fn from_expression(handle: ExpressionHandle<Self>) -> Result<Self, BuilderError> {
-        Ok(Self {
-            handle,
-            _ty: PhantomData,
-        })
-    }
-}
-
-impl<T, const N: usize, const M: usize> IntoExpression<mat<T, N, M>> for mat<T, N, M> {
-    fn into_expression(self) -> ExpressionHandle<mat<T, N, M>> {
-        self.handle
-    }
-}
 
 impl<T: Width, const N: usize, const M: usize> Width for mat<T, N, M> {
     const WIDTH: usize = <T as Width>::WIDTH * N;
