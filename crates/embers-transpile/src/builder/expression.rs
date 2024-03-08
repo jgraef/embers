@@ -12,6 +12,7 @@ use naga::{
 };
 
 use super::{
+    block::BlockBuilder,
     error::BuilderError,
     function::FunctionBuilder,
 };
@@ -104,19 +105,20 @@ impl<T: ?Sized> Copy for ExpressionHandle<T> {}
 pub trait AsExpression<T: ?Sized> {
     fn as_expression(
         &self,
-        function_builder: &mut FunctionBuilder,
+        block_builder: &mut BlockBuilder,
     ) -> Result<ExpressionHandle<T>, BuilderError>;
 }
 
 impl<T> AsExpression<T> for ExpressionHandle<T> {
     fn as_expression(
         &self,
-        _function_builder: &mut FunctionBuilder,
+        _block_builder: &mut BlockBuilder,
     ) -> Result<ExpressionHandle<T>, BuilderError> {
         Ok(self.clone())
     }
 }
 
+/*
 pub trait FromExpression<T: ?Sized>: Sized {
     fn from_expression(handle: ExpressionHandle<T>) -> Result<Self, BuilderError>;
 }
@@ -136,3 +138,4 @@ impl<T: ?Sized> IntoExpression<T> for ExpressionHandle<T> {
         self
     }
 }
+*/

@@ -14,6 +14,7 @@ use naga::{
 };
 
 use super::{
+    block::BlockBuilder,
     error::BuilderError,
     expression::{
         AsExpression,
@@ -34,6 +35,13 @@ use super::{
     },
 };
 
+pub trait Compose {
+    fn compose(
+        &self,
+        block_builder: &mut BlockBuilder,
+    ) -> Result<ExpressionHandle<Self>, BuilderError>;
+}
+
 pub trait FieldAccessor {}
 
 pub struct UnnamedFieldAccessor<const INDEX: usize>;
@@ -47,7 +55,7 @@ pub trait FieldAccess<F: FieldAccessor> {
     type Result: AsExpression<Self::Type>;
 
     fn access(
-        function_builder: &mut FunctionBuilder,
+        block_builder: &mut BlockBuilder,
         base: ExpressionHandle<Self>,
     ) -> Result<Self::Result, BuilderError>;
 }
@@ -107,6 +115,8 @@ impl<'a> StructBuilder<'a> {
     }
 
     pub fn build<T: ShaderType>(self) -> TypeHandle {
+        let mut offset = 0;
+
         let members = self
             .fields
             .into_iter()
@@ -143,11 +153,12 @@ impl<'a> StructBuilder<'a> {
 
 /// todo: how do we know the address space?
 pub fn access_struct_field<T: ShaderType, U: ShaderType>(
-    function_builder: &mut FunctionBuilder,
+    block_builder: &mut BlockBuilder,
     base: ExpressionHandle<T>,
     index: usize,
 ) -> Result<DeferredDereference<U, address_space::Private>, BuilderError> {
-    let field_map = function_builder
+    let field_map = block_builder
+        .function_builder
         .module_builder
         .struct_fields
         .get(&base.type_id());
@@ -160,7 +171,9 @@ pub fn access_struct_field<T: ShaderType, U: ShaderType>(
                 .get(index)
                 .expect("field index out of bounds")
                 .map(|index| {
-                    function_builder.add_expression(Expression::AccessIndex { base, index })
+                    block_builder
+                        .function_builder
+                        .add_expression(Expression::AccessIndex { base, index })
                 })
                 .transpose()?
         }
@@ -170,8 +183,4 @@ pub fn access_struct_field<T: ShaderType, U: ShaderType>(
     let handle = handle.unwrap_or_else(|| ExpressionHandle::from_empty());
 
     Ok(DeferredDereference::new(handle))
-}
-
-pub trait Compose {
-    fn compose(&self, function_builder: &mut FunctionBuilder) -> Result<ExpressionHandle<Self>, BuilderError>;
 }

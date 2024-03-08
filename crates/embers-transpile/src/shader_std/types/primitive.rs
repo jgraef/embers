@@ -52,8 +52,8 @@ macro_rules! impl_unary {
 
             fn $method(self) -> Self::Output {
                 ::embers_transpile::__private::intrinsic! {
-                    let expr = crate::__private::AsExpression::as_expression(&_self, function_builder)?.try_get_handle()?;
-                    function_builder.add_expression::<$ty>(crate::__private::naga::Expression::Unary {
+                    let expr = crate::__private::AsExpression::as_expression(&_self, block_builder)?.try_get_handle()?;
+                    block_builder.function_builder.add_expression::<$ty>(crate::__private::naga::Expression::Unary {
                         op: crate::__private::naga::UnaryOperator::$op,
                         expr,
                     })?
@@ -71,9 +71,9 @@ macro_rules! impl_binary {
 
             fn $method(self, rhs: $ty) -> Self::Output {
                 ::embers_transpile::__private::intrinsic! {
-                    let left = crate::__private::AsExpression::as_expression(&_self, function_builder)?.try_get_handle()?;
-                    let right = crate::__private::AsExpression::as_expression(&rhs, function_builder)?.try_get_handle()?;
-                    function_builder.add_expression::<$ty>(crate::__private::naga::Expression::Binary {
+                    let left = crate::__private::AsExpression::as_expression(&_self, block_builder)?.try_get_handle()?;
+                    let right = crate::__private::AsExpression::as_expression(&rhs, block_builder)?.try_get_handle()?;
+                    block_builder.function_builder.add_expression::<$ty>(crate::__private::naga::Expression::Binary {
                         op: crate::__private::naga::BinaryOperator::$op,
                         left,
                         right,

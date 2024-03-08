@@ -163,11 +163,9 @@ mod struct_test {
         y: i32,
     }
 
-    fn test() {
-        let x = Foo {
-            x: 42,
-            y: 123,
-        };
+    #[transpile(entrypoint)]
+    pub fn test() {
+        let x = Foo { x: 42, y: 123 };
     }
 }
 
@@ -194,8 +192,10 @@ fn main() -> Result<(), Error> {
     //let wgsl = naga::front::wgsl::parse_str(wgsl)?;
     //println!("{wgsl:#?}");
 
-    use embers_transpile::shader_std;
-    let transpiled = shader::map::<shader_std::types::primitive::i32, shader::AddOp>()?;
+    //use embers_transpile::shader_std;
+    //let transpiled = shader::map::<shader_std::types::primitive::i32,
+    // shader::AddOp>()?;
+    let transpiled = struct_test::test()?;
     println!("{:#?}", transpiled.naga);
     println!("");
     println!("{}", to_wgsl(&transpiled.naga)?);

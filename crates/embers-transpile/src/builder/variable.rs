@@ -8,6 +8,7 @@ use naga::{
 };
 
 use super::{
+    block::BlockBuilder,
     error::BuilderError,
     expression::{
         AsExpression,
@@ -27,7 +28,7 @@ pub trait Assign<T> {
     fn assign<E: AsExpression<T>>(
         &self,
         value: E,
-        function_builder: &mut FunctionBuilder,
+        block_builder: &mut BlockBuilder,
     ) -> Result<(), BuilderError>;
 }
 
@@ -50,7 +51,7 @@ impl<T> LetBinding<T> {
 impl<T> AsExpression<T> for LetBinding<T> {
     fn as_expression(
         &self,
-        _function_builder: &mut FunctionBuilder,
+        _block_builder: &mut BlockBuilder,
     ) -> Result<ExpressionHandle<T>, BuilderError> {
         self.value.clone().ok_or(BuilderError::LetUnbound)
     }
@@ -81,10 +82,10 @@ impl<T> LetMutBinding<T> {
 impl<T: ShaderType> AsExpression<T> for LetMutBinding<T> {
     fn as_expression(
         &self,
-        function_builder: &mut FunctionBuilder,
+        block_builder: &mut BlockBuilder,
     ) -> Result<ExpressionHandle<T>, BuilderError> {
-        let pointer = self.as_pointer(function_builder)?;
-        let expr = pointer.load(function_builder)?;
+        let pointer = self.as_pointer(&mut block_builder.function_builder)?;
+        let expr = pointer.load(block_builder)?;
 
         Ok(expr)
     }
@@ -113,11 +114,11 @@ impl<T: ShaderType> Assign<T> for LetMutBinding<T> {
     fn assign<E: AsExpression<T>>(
         &self,
         value: E,
-        function_builder: &mut FunctionBuilder,
+        mut block_builder: &mut BlockBuilder,
     ) -> Result<(), BuilderError> {
-        let value = value.as_expression(function_builder)?;
-        let pointer = self.as_pointer(function_builder)?;
-        pointer.store(&value, function_builder)?;
+        let value = value.as_expression(&mut block_builder)?;
+        let pointer = self.as_pointer(&mut block_builder.function_builder)?;
+        pointer.store(&value, block_builder)?;
         Ok(())
     }
 }
@@ -164,11 +165,13 @@ impl<T: ?Sized, A> GlobalVariable<T, A> {
 impl<T: ShaderType + ?Sized, A: AddressSpace> AsExpression<Pointer<T, A>> for GlobalVariable<T, A> {
     fn as_expression(
         &self,
-        function_builder: &mut FunctionBuilder,
+        block_builder: &mut BlockBuilder,
     ) -> Result<ExpressionHandle<Pointer<T, A>>, BuilderError> {
         let expression_handle = match &self.handle {
             GlobalVariableHandle::Handle(handle) => {
-                function_builder.add_expression(Expression::GlobalVariable(*handle))?
+                block_builder
+                    .function_builder
+                    .add_expression(Expression::GlobalVariable(*handle))?
             }
             GlobalVariableHandle::Empty => ExpressionHandle::from_empty(),
         };

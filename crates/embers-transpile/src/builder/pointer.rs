@@ -9,12 +9,11 @@ use naga::{
 };
 
 use super::{
+    block::BlockBuilder,
     error::BuilderError,
     expression::{
         AsExpression,
         ExpressionHandle,
-        FromExpression,
-        IntoExpression,
     },
     function::FunctionBuilder,
     module::ModuleBuilder,
@@ -97,12 +96,13 @@ impl<T: ShaderType, A: AddressSpace> ShaderType for Pointer<T, A> {
 impl<T: ShaderType, A: AddressSpace> AsExpression<Pointer<T, A>> for Pointer<T, A> {
     fn as_expression(
         &self,
-        _function_builder: &mut FunctionBuilder,
+        _block_builder: &mut BlockBuilder,
     ) -> Result<ExpressionHandle<Pointer<T, A>>, BuilderError> {
         Ok(self.handle.clone())
     }
 }
 
+/*
 impl<T: ShaderType, A: AddressSpace> FromExpression<Pointer<T, A>> for Pointer<T, A> {
     fn from_expression(handle: ExpressionHandle<Pointer<T, A>>) -> Result<Self, BuilderError> {
         Ok(Self {
@@ -118,17 +118,19 @@ impl<T: ShaderType, A: AddressSpace> IntoExpression<Pointer<T, A>> for Pointer<T
         self.handle
     }
 }
+ */
 
 impl<T: ShaderType, A: AddressSpace> ExpressionHandle<Pointer<T, A>> {
     pub fn load(
         &self,
-        function_builder: &mut FunctionBuilder,
+        block_builder: &mut BlockBuilder,
     ) -> Result<ExpressionHandle<T>, BuilderError> {
         let expr = match self {
             ExpressionHandle::Handle { handle, .. } => {
-                let expr =
-                    function_builder.add_expression(Expression::Load { pointer: *handle })?;
-                function_builder.add_emit(&expr)?;
+                let expr = block_builder
+                    .function_builder
+                    .add_expression(Expression::Load { pointer: *handle })?;
+                block_builder.add_emit(&expr)?;
                 expr
             }
             ExpressionHandle::Empty { _ty } => ExpressionHandle::from_empty(),
@@ -140,14 +142,15 @@ impl<T: ShaderType, A: AddressSpace> ExpressionHandle<Pointer<T, A>> {
     pub fn store(
         &self,
         value: &ExpressionHandle<T>,
-        function_builder: &mut FunctionBuilder,
+        block_builder: &mut BlockBuilder,
     ) -> Result<(), BuilderError> {
         if let Some(handle) = self.get_handle() {
+            block_builder.add_emit(value);
             let value = value.try_get_handle()?;
-            function_builder.add_statement(Statement::Store {
+            block_builder.add_statement(Statement::Store {
                 pointer: handle,
                 value,
-            });
+            })?;
         }
         else {
             // we store a empty type (e.g. ()) by doing nothing
@@ -162,7 +165,7 @@ pub trait Dereference {
 
     fn dereference(
         &self,
-        function_builder: &mut FunctionBuilder,
+        block_builder: &mut BlockBuilder,
     ) -> Result<ExpressionHandle<Self::Target>, BuilderError>;
 }
 
@@ -193,9 +196,9 @@ impl<T: ShaderType, A: AddressSpace> Dereference for ExpressionHandle<Pointer<T,
 
     fn dereference(
         &self,
-        function_builder: &mut FunctionBuilder,
+        block_builder: &mut BlockBuilder,
     ) -> Result<ExpressionHandle<Self::Target>, BuilderError> {
-        self.load(function_builder)
+        self.load(block_builder)
     }
 }
 
@@ -221,11 +224,11 @@ impl<T: ShaderType, A: AddressSpace> AsPointer for DeferredDereference<T, A> {
     }
 }
 
-// todo: do we want to do a load here instead? i think we do, right?
+// todo: do a load here and return ExpressionHandle<T>
 impl<T: ShaderType, A: AddressSpace> AsExpression<Pointer<T, A>> for DeferredDereference<T, A> {
     fn as_expression(
         &self,
-        _function_builder: &mut FunctionBuilder,
+        _block_builder: &mut BlockBuilder,
     ) -> Result<ExpressionHandle<Pointer<T, A>>, BuilderError> {
         Ok(self.pointer)
     }

@@ -309,7 +309,7 @@ fn process_function(
                         #body
                     },
                     move |
-                        mut _function_builder: &mut ::embers_transpile::__private::FunctionBuilder,
+                        mut _block_builder: &mut ::embers_transpile::__private::BlockBuilder,
                         _func_handle: ::embers_transpile::__private::TypeHandle,
                     | {
                         #call
@@ -362,7 +362,7 @@ pub fn transform_signature_to_generator(sig: &Signature) -> (TokenStream, TokenS
             let mut ty = ty.clone();
             map_types(&mut ty, TypePosition::Argument);
             quote! { #ty }
-        },
+        }
     };
 
     let generics = &sig.generics;
@@ -528,20 +528,24 @@ fn generate_function_body(
         _ => {}
     }
 
-    let result_var = process_block_inner(block, &mut body, &mut name_gen)?;
-
-    // make sure the return value type matches
     body.push(quote! {
-        let #result_var = ::embers_transpile::__private::AsExpression::as_expression(&#result_var, &mut _function_builder)?;
-        let #result_var: ::embers_transpile::__private::ExpressionHandle<#ret> = #result_var;
+        let mut _block_builder = _function_builder.block();
     });
 
-    // return
+    let result_var = process_block_inner(block, &mut body, &mut name_gen)?;
+
     body.push(quote! {
-        _function_builder.add_emit(&#result_var)?;
-        _function_builder.add_statement(::embers_transpile::__private::naga::Statement::Return {
+        // make sure the return value type matches
+        let #result_var = ::embers_transpile::__private::AsExpression::as_expression(&#result_var, &mut _block_builder)?;
+        let #result_var: ::embers_transpile::__private::ExpressionHandle<#ret> = #result_var;
+
+        // return
+        _block_builder.add_emit(&#result_var)?;
+        _block_builder.add_statement(::embers_transpile::__private::naga::Statement::Return {
             value: #result_var.get_handle(),
-        });
+        })?;
+
+        _block_builder.finish_root();
         ::embers_transpile::__private::Ok::<(), ::embers_transpile::__private::BuilderError>(())
     });
 
@@ -592,9 +596,9 @@ fn generate_function_call(sig: &Signature) -> Result<TokenStream, Error> {
                     #num_args
                 >
             > = [
-                #(::embers_transpile::__private::AsExpression::as_expression(&#arg_names, &mut _function_builder)?.get_handle()),*
+                #(::embers_transpile::__private::AsExpression::as_expression(&#arg_names, &mut _block_builder)?.get_handle()),*
             ].into_iter().flatten();
-            _function_builder.add_call(
+            _block_builder.add_call(
                 _func_handle,
                 _args,
             )
@@ -617,7 +621,7 @@ fn generate_function_body_inline(
 
     // make sure the return value type matches
     body.push(quote! {
-        let #result_var = ::embers_transpile::__private::AsExpression::as_expression(&#result_var, &mut _function_builder)?;
+        let #result_var = ::embers_transpile::__private::AsExpression::as_expression(&#result_var, &mut _block_builder)?;
         let #result_var: ::embers_transpile::__private::ExpressionHandle<#ret> = #result_var;
         // should we emit here?
         //_function_builder.add_emit(&#result_var)?;
@@ -671,7 +675,7 @@ fn process_stmt(
                 assert!(rhs.diverge.is_none());
                 let rhs = process_expr(&rhs.expr, output, name_gen)?;
                 output.push(quote!{
-                    let #rhs = ::embers_transpile::__private::AsExpression::as_expression(&#rhs, &mut _function_builder)?;
+                    let #rhs = ::embers_transpile::__private::AsExpression::as_expression(&#rhs, &mut _block_builder)?;
                 });
                 Some(rhs)
             }
@@ -702,13 +706,13 @@ fn process_stmt(
                     };
 
                     output.push(quote! {
-                        let #ident = _function_builder.add_local_variable::<#lhs_ty>(#ident_literal, #init)?;
+                        let #ident = _block_builder.function_builder.add_local_variable::<#lhs_ty>(#ident_literal, #init)?;
                     });
                 }
                 else {
                     if let Some(rhs) = &rhs {
                         output.push(quote! {
-                             _function_builder.name_expression(#ident_literal, #rhs.clone())?;
+                            _block_builder.function_builder.name_expression(#ident_literal, #rhs.clone())?;
                              let #ident = ::embers_transpile::__private::LetBinding::<#lhs_ty>::from_expr(#rhs);
                         });
                     }
@@ -794,7 +798,7 @@ fn process_macro(
             let #var = {
                 // just so that we have a proper name and no warnings. we also might want to change the name of the _function_builder variable later.
                 #[allow(unused_variables)]
-                let mut function_builder = &mut _function_builder;
+                let mut block_builder = &mut _block_builder;
 
                 #tokens
             };
@@ -850,21 +854,6 @@ fn process_expr(
     output: &mut TokenBuffer,
     name_gen: &mut NameGen,
 ) -> Result<ExprOut, Error> {
-    macro_rules! emit_lit {
-        ($ty:ident, $variant:ident, $x:expr) => {{
-            let var = name_gen.tmp_var("lit");
-            let x = $x;
-            output.push(quote! {
-                let #var = _function_builder.add_expression::<$ty>(
-                    ::embers_transpile::__private::naga::Expression::Literal(
-                        ::embers_transpile::__private::naga::Literal::$variant(#x)
-                    )
-                )?;
-            });
-            ExprOut::from(var)
-        }};
-    }
-
     fn emit_func_call(
         output: &mut TokenBuffer,
         name_gen: &mut NameGen,
@@ -878,7 +867,7 @@ fn process_expr(
         for (i, arg) in args.iter().enumerate() {
             let bind = name_gen.tmp_var("arg");
             arg_binds.push(quote!{
-                let #bind = ::embers_transpile::__private::AsExpression::as_expression(&#arg, &mut _function_builder)?;
+                let #bind = ::embers_transpile::__private::AsExpression::as_expression(&#arg, &mut _block_builder)?;
             });
             if i == 0 {
                 arg_binds.push(quote! {
@@ -892,7 +881,7 @@ fn process_expr(
             let #out = {
                 #(#arg_binds)*
                 let _gen = #func(#(#arg_names),*);
-                ::embers_transpile::__private::GenerateCall::call(&_gen, _function_builder)?
+                ::embers_transpile::__private::GenerateCall::call(&_gen, &mut _block_builder)?
             };
         });
 
@@ -913,7 +902,7 @@ fn process_expr(
         for (i, arg) in args.iter().enumerate() {
             let bind = name_gen.tmp_var("arg");
             arg_binds.push(quote!{
-                let #bind = ::embers_transpile::__private::AsExpression::as_expression(&#arg, &mut _function_builder)?;
+                let #bind = ::embers_transpile::__private::AsExpression::as_expression(&#arg, &mut _block_builder)?;
             });
             if i == 0 {
                 arg_binds.push(quote! {
@@ -926,9 +915,9 @@ fn process_expr(
         output.push(quote! {
             let #out = {
                 #(#arg_binds)*
-                let #receiver = ::embers_transpile::__private::AsExpression::as_expression(&#receiver, &mut _function_builder)?;
+                let #receiver = ::embers_transpile::__private::AsExpression::as_expression(&#receiver, &mut _block_builder)?;
                 let _gen = ::embers_transpile::__private::PhantomReceiverPointer::from(#receiver).#method((#(#args),*));
-                ::embers_transpile::__private::GenerateCall::call(&_gen, _function_builder)?
+                ::embers_transpile::__private::GenerateCall::call(&_gen, _block_builder)?
             };
         });
 
@@ -956,13 +945,6 @@ fn process_expr(
         Expr::Binary(binary) => {
             let left = process_expr(&binary.left, output, name_gen)?;
             let right = process_expr(&binary.right, output, name_gen)?;
-            //output.push(quote!{
-            //    let #left =
-            // ::embers_transpile::__private::AsExpression::as_expression(&#left, &mut
-            // _function_builder)?;    let #right =
-            // ::embers_transpile::__private::AsExpression::as_expression(&#right, &mut
-            // _function_builder)?;
-            //});
 
             let out = match &binary.op {
                 BinOp::Add(_) => emit_func_call_std!(ops::Add::add, left, right),
@@ -1035,14 +1017,14 @@ fn process_expr(
         Expr::Field(field) => {
             let base = process_expr(&field.base, output, name_gen)?;
             output.push(quote!{
-                let #base = ::embers_transpile::__private::AsExpression::as_expression(&#base, &mut _function_builder)?;
+                let #base = ::embers_transpile::__private::AsExpression::as_expression(&#base, &mut _block_builder)?;
             });
 
             let field_accessor = field_accessor_for_member(&field.member);
 
             let out = name_gen.tmp_var("field");
             output.push(quote! {
-                let #out = ::embers_transpile::__private::FieldAccess::<::embers_transpile::__private::#field_accessor>::access(&mut _function_builder, #base)?;
+                let #out = ::embers_transpile::__private::FieldAccess::<::embers_transpile::__private::#field_accessor>::access(&mut _block_builder, #base)?;
             });
             out.into()
         }
@@ -1053,9 +1035,9 @@ fn process_expr(
             match &lit.lit {
                 syn::Lit::Int(lit_int) => {
                     let lit_ty = match lit_int.suffix() {
-                        "i32" => quote!{ ::embers_transpile::__private::i32 },
-                        "u32" => quote!{ ::embers_transpile::__private::u32 },
-                        "" => quote!{ ::embers_transpile::__private::AnyInteger },
+                        "i32" => quote! { ::embers_transpile::__private::i32 },
+                        "u32" => quote! { ::embers_transpile::__private::u32 },
+                        "" => quote! { ::embers_transpile::__private::AnyInteger },
                         _ => panic!("unsupported integer literal: {lit_int}"),
                     };
 
@@ -1067,9 +1049,9 @@ fn process_expr(
                 }
                 syn::Lit::Float(lit_float) => {
                     let lit_ty = match lit_float.suffix() {
-                        "f32" => quote!{ ::embers_transpile::__private::f32 },
-                        "f64" => quote!{ ::embers_transpile::__private::f64 },
-                        "" => quote!{ ::embers_transpile::__private::AnyFloat },
+                        "f32" => quote! { ::embers_transpile::__private::f32 },
+                        "f64" => quote! { ::embers_transpile::__private::f64 },
+                        "" => quote! { ::embers_transpile::__private::AnyFloat },
                         _ => panic!("unsupported float literal"),
                     };
 
@@ -1125,7 +1107,7 @@ fn process_expr(
             let expr = process_expr(&ref_.expr, output, name_gen)?;
             let out = name_gen.tmp_var("ref");
             output.push(quote! {
-                let #out = ::embers_transpile::__private::AsPointer::as_pointer(&#expr, _function_builder)?;
+                let #out = ::embers_transpile::__private::AsPointer::as_pointer(&#expr, _block_builder.function_builder)?;
             });
             out.into()
         }
@@ -1134,8 +1116,8 @@ fn process_expr(
             if let Some(expr) = &ret.expr {
                 let out = process_expr(expr, output, name_gen)?;
                 output.push(quote! {
-                    let #out = ::embers_transpile::__private::AsExpression::as_expression(&#out, &mut _function_builder)?;
-                    _function_builder.add_emit(&#out)?;
+                    let #out = ::embers_transpile::__private::AsExpression::as_expression(&#out, &mut _block_builder)?;
+                    _block_builder.function_builder.add_emit(&#out)?;
                     let _return_value = #out.get_handle();
                 });
             }
@@ -1147,9 +1129,9 @@ fn process_expr(
 
             let out = name_gen.tmp_var("return");
             output.push(quote! {
-                _function_builder.add_statement(::embers_transpile::__private::naga::Statement::Return {
+                _block_builder.function_builder.add_statement(::embers_transpile::__private::naga::Statement::Return {
                     value: _return_value,
-                });
+                })?;
                 let #out = ::embers_transpile::__private::ExpressionHandle::<::embers_transpile::__private::Unit>::from_empty();
             });
             out.into()
@@ -1165,17 +1147,17 @@ fn process_expr(
                 let colon_token = &field.colon_token;
                 let expr = process_expr(&field.expr, output, name_gen)?;
                 fields.push(quote!{
-                    #member #colon_token ::embers_transpile::__private::AsExpression::as_expression(&#expr, &mut _function_builder)?,
+                    #member #colon_token ::embers_transpile::__private::AsExpression::as_expression(&#expr, &mut _block_builder)?,
                 });
             }
 
             let out = name_gen.tmp_var("compose");
-            output.push(quote!{
+            output.push(quote! {
                 let #out = ::embers_transpile::__private::Compose::compose(
                     &#path {
                         #fields
                     },
-                    &mut _function_builder,
+                    &mut _block_builder,
                 )?;
             });
 
@@ -1190,8 +1172,8 @@ fn process_expr(
                     let arg = process_expr(&unary.expr, output, name_gen)?;
                     let out = name_gen.tmp_var("deref");
                     output.push(quote! {
-                        let #arg = ::embers_transpile::__private::AsExpression::as_expression(&#arg, &mut _function_builder)?;
-                        let #out = ::embers_transpile::__private::Dereference::dereference(&#arg, &mut _function_builder)?;
+                        let #arg = ::embers_transpile::__private::AsExpression::as_expression(&#arg, &mut _block_builder)?;
+                        let #out = ::embers_transpile::__private::Dereference::dereference(&#arg, &mut _block_builder)?;
                     });
                     out.into()
                 }

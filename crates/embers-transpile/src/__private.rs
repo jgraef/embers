@@ -23,12 +23,11 @@ pub use ::std::{
 
 pub use crate::{
     builder::{
+        block::BlockBuilder,
         error::BuilderError,
         expression::{
             AsExpression,
             ExpressionHandle,
-            FromExpression,
-            IntoExpression,
         },
         function::{
             CallGenerator,
@@ -37,6 +36,11 @@ pub use crate::{
             GenerateCall,
             PhantomReceiver,
             PhantomReceiverPointer,
+        },
+        literal::{
+            AnyFloat,
+            AnyInteger,
+            Literal,
         },
         module::{
             Module,
@@ -52,10 +56,10 @@ pub use crate::{
         },
         r#struct::{
             access_struct_field,
+            Compose,
             FieldAccess,
             NamedFieldAccessor,
             UnnamedFieldAccessor,
-            Compose,
         },
         r#type::{
             ShaderType,
@@ -65,7 +69,6 @@ pub use crate::{
             GlobalVariable,
             LetBinding,
         },
-        literal::{Literal, AnyFloat, AnyInteger},
     },
     shader_std::{
         self,
@@ -74,8 +77,14 @@ pub use crate::{
                 Array,
                 DynamicArray,
             },
+            primitive::{
+                bool,
+                f32,
+                f64,
+                i32,
+                u32,
+            },
             Unit,
-            primitive::{u32, i32, f32, f64, bool}
-        }
+        },
     },
 };

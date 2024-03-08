@@ -5,6 +5,7 @@ use naga::Expression;
 
 use crate::{
     builder::{
+        block::BlockBuilder,
         error::BuilderError,
         expression::ExpressionHandle,
         function::FunctionBuilder,
@@ -73,16 +74,18 @@ where
     type Result = ExpressionHandle<T>;
 
     fn access(
-        function_builder: &mut FunctionBuilder,
+        block_builder: &mut BlockBuilder,
         base: ExpressionHandle<Self>,
     ) -> Result<Self::Result, BuilderError> {
         let expr = base
             .get_handle()
             .map(|base| {
-                function_builder.add_expression(Expression::AccessIndex {
-                    base,
-                    index: I as _,
-                })
+                block_builder
+                    .function_builder
+                    .add_expression(Expression::AccessIndex {
+                        base,
+                        index: I as _,
+                    })
             })
             .transpose()?
             .unwrap_or_else(|| ExpressionHandle::from_empty());
@@ -100,10 +103,10 @@ macro_rules! vec_named_field_access {
             type Result = <Self as FieldAccess<UnnamedFieldAccessor<$i>>>::Result;
 
             fn access(
-                function_builder: &mut FunctionBuilder,
+                block_builder: &mut BlockBuilder,
                 base: ExpressionHandle<Self>,
             ) -> Result<Self::Result, BuilderError> {
-                FieldAccess::<UnnamedFieldAccessor<$i>>::access(function_builder, base)
+                FieldAccess::<UnnamedFieldAccessor<$i>>::access(block_builder, base)
             }
         }
     };
@@ -122,8 +125,8 @@ where
 {
     fn default() -> Self {
         ::embers_transpile::__private::intrinsic! {
-            let ty_handle = function_builder.module_builder.get_type_by_id_or_add_it::<Self>()?.try_get_data()?;
-            function_builder.add_expression::<Self>(crate::__private::naga::Expression::ZeroValue(ty_handle))?
+            let ty_handle = block_builder.function_builder.module_builder.get_type_by_id_or_add_it::<Self>()?.try_get_data()?;
+            block_builder.function_builder.add_expression::<Self>(crate::__private::naga::Expression::ZeroValue(ty_handle))?
         }
     }
 }
@@ -177,8 +180,8 @@ where
 {
     fn default() -> Self {
         ::embers_transpile::__private::intrinsic! {
-            let ty_handle = function_builder.module_builder.get_type_by_id_or_add_it::<Self>()?.try_get_data()?;
-            function_builder.add_expression::<Self>(crate::__private::naga::Expression::ZeroValue(ty_handle))?
+            let ty_handle = block_builder.function_builder.module_builder.get_type_by_id_or_add_it::<Self>()?.try_get_data()?;
+            block_builder.function_builder.add_expression::<Self>(crate::__private::naga::Expression::ZeroValue(ty_handle))?
         }
     }
 }

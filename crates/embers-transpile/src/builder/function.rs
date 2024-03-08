@@ -21,6 +21,7 @@ use naga::{
 };
 
 use super::{
+    block::BlockBuilder,
     error::BuilderError,
     expression::{
         AsExpression,
@@ -39,10 +40,7 @@ use super::{
     },
     variable::LetMutBinding,
 };
-use crate::{
-    __private::IntoExpression,
-    utils::try_all,
-};
+use crate::utils::try_all;
 
 pub trait GenerateFunction: 'static {
     fn generate(&self, function_builder: &mut FunctionBuilder) -> Result<(), BuilderError>;
@@ -52,7 +50,7 @@ pub trait GenerateCall: 'static {
     type Return;
     fn call(
         &self,
-        function_builder: &mut FunctionBuilder,
+        block_builder: &mut BlockBuilder,
     ) -> Result<ExpressionHandle<Self::Return>, BuilderError>;
 }
 
@@ -74,20 +72,18 @@ impl<B, C, R> CallGenerator<B, C, R> {
 
 impl<
         B: Fn(&mut FunctionBuilder) -> Result<(), BuilderError> + 'static,
-        C: Fn(&mut FunctionBuilder, TypeHandle) -> Result<ExpressionHandle<R>, BuilderError> + 'static,
+        C: Fn(&mut BlockBuilder, TypeHandle) -> Result<ExpressionHandle<R>, BuilderError> + 'static,
         R: 'static,
     > GenerateCall for CallGenerator<B, C, R>
 {
     type Return = R;
 
-    fn call(
-        &self,
-        function_builder: &mut FunctionBuilder,
-    ) -> Result<ExpressionHandle<R>, BuilderError> {
-        let func_handle = function_builder
+    fn call(&self, block_builder: &mut BlockBuilder) -> Result<ExpressionHandle<R>, BuilderError> {
+        let func_handle = block_builder
+            .function_builder
             .module_builder
             .get_func_by_id_or_add_it(self)?;
-        let ret_handle = (self.call)(function_builder, func_handle)?;
+        let ret_handle = (self.call)(block_builder, func_handle)?;
         Ok(ret_handle)
     }
 }
@@ -116,17 +112,14 @@ impl<B, R> InlineCallGenerator<B, R> {
 }
 
 impl<
-        B: Fn(&mut FunctionBuilder) -> Result<ExpressionHandle<R>, BuilderError> + 'static,
+        B: Fn(&mut BlockBuilder) -> Result<ExpressionHandle<R>, BuilderError> + 'static,
         R: 'static,
     > GenerateCall for InlineCallGenerator<B, R>
 {
     type Return = R;
 
-    fn call(
-        &self,
-        function_builder: &mut FunctionBuilder,
-    ) -> Result<ExpressionHandle<R>, BuilderError> {
-        let ret_handle = (self.body)(function_builder)?;
+    fn call(&self, block_builder: &mut BlockBuilder) -> Result<ExpressionHandle<R>, BuilderError> {
+        let ret_handle = (self.body)(block_builder)?;
         Ok(ret_handle)
     }
 }
@@ -177,17 +170,19 @@ impl<T: ?Sized> From<ExpressionHandle<T>> for PhantomReceiver<T> {
 impl<T: ?Sized> AsExpression<T> for PhantomReceiver<T> {
     fn as_expression(
         &self,
-        _function_builder: &mut FunctionBuilder,
+        _block_builder: &mut BlockBuilder,
     ) -> Result<ExpressionHandle<T>, BuilderError> {
         Ok(self.handle.clone())
     }
 }
 
+/*
 impl<T: ?Sized> IntoExpression<T> for PhantomReceiver<T> {
     fn into_expression(self) -> ExpressionHandle<T> {
         self.handle
     }
 }
+ */
 
 impl<T: ?Sized> Clone for PhantomReceiver<T> {
     fn clone(&self) -> Self {
@@ -230,12 +225,13 @@ impl<T: ShaderType + ?Sized, A: AddressSpace> AsExpression<Pointer<T, A>>
 {
     fn as_expression(
         &self,
-        _function_builder: &mut FunctionBuilder,
+        _block_builder: &mut BlockBuilder,
     ) -> Result<ExpressionHandle<Pointer<T, A>>, BuilderError> {
         Ok(self.handle.clone())
     }
 }
 
+/*
 impl<T: ShaderType + ?Sized, A: AddressSpace> IntoExpression<Pointer<T, A>>
     for PhantomReceiverPointer<T, A>
 {
@@ -243,6 +239,7 @@ impl<T: ShaderType + ?Sized, A: AddressSpace> IntoExpression<Pointer<T, A>>
         self.handle
     }
 }
+ */
 
 impl<T: ShaderType + ?Sized, A: AddressSpace> Clone for PhantomReceiverPointer<T, A> {
     fn clone(&self) -> Self {
@@ -281,8 +278,8 @@ impl<T> Copy for TypeHelper<T> {}
 
 impl<T: ShaderType + ?Sized, A: AddressSpace> Copy for PhantomReceiverPointer<T, A> {}
 
-pub struct FunctionBuilder<'a> {
-    pub module_builder: &'a mut ModuleBuilder,
+pub struct FunctionBuilder<'m> {
+    pub module_builder: &'m mut ModuleBuilder,
     receiver: Option<TypeHandle>,
     name: Option<String>,
     type_id: TypeId,
@@ -290,13 +287,13 @@ pub struct FunctionBuilder<'a> {
     output: TypeHandle,
     expressions: Arena<Expression>,
     named_expressions: FastIndexMap<Handle<Expression>, String>,
-    statements: Vec<Statement>,
     local_variables: Arena<LocalVariable>,
     const_expressions: HashMap<Handle<Expression>, bool>,
+    pub(super) body: Option<Block>,
 }
 
-impl<'a> FunctionBuilder<'a> {
-    pub fn new<F: 'static>(module_builder: &'a mut ModuleBuilder) -> Self {
+impl<'m> FunctionBuilder<'m> {
+    pub fn new<F: 'static>(module_builder: &'m mut ModuleBuilder) -> Self {
         Self {
             module_builder,
             receiver: None,
@@ -306,9 +303,9 @@ impl<'a> FunctionBuilder<'a> {
             output: TypeHandle::default(),
             expressions: Default::default(),
             named_expressions: Default::default(),
-            statements: vec![],
             local_variables: Default::default(),
             const_expressions: HashMap::default(),
+            body: None,
         }
     }
 
@@ -395,36 +392,6 @@ impl<'a> FunctionBuilder<'a> {
         Ok(())
     }
 
-    pub fn add_call<R: ShaderType>(
-        &mut self,
-        function: TypeHandle,
-        args: impl IntoIterator<Item = Handle<Expression>>,
-    ) -> Result<ExpressionHandle<R>, BuilderError> {
-        let naga_fun = function.try_get_code()?;
-
-        let ret_type = self.module_builder.get_type_by_id_or_add_it::<R>()?;
-
-        let ret = if ret_type.is_zero_sized() {
-            ExpressionHandle::<R>::from_empty()
-        }
-        else {
-            let expr = Expression::CallResult(naga_fun);
-            self.add_expression::<R>(expr)?
-        };
-
-        self.add_statement(Statement::Call {
-            function: naga_fun,
-            arguments: args.into_iter().collect(),
-            result: ret.get_handle(),
-        });
-
-        Ok(ret)
-    }
-
-    pub fn add_statement(&mut self, statement: Statement) {
-        self.statements.push(statement);
-    }
-
     pub fn add_local_variable<T: ShaderType>(
         &mut self,
         name: impl ToString,
@@ -458,37 +425,34 @@ impl<'a> FunctionBuilder<'a> {
         Ok(let_mut)
     }
 
-    pub fn add_emit<T>(&mut self, expr: &ExpressionHandle<T>) -> Result<(), BuilderError> {
-        if let Some(handle) = expr.get_handle() {
-            let range = naga::Range::new_from_bounds(handle, handle);
-            self.add_statement(Statement::Emit(range));
-        }
-        Ok(())
+    pub fn block<'f>(&'f mut self) -> BlockBuilder<'m, 'f> {
+        BlockBuilder::new(self)
     }
 
-    fn build_naga(&mut self) -> naga::Function {
+    fn build_inner(self) -> (naga::Function, &'m mut ModuleBuilder, TypeId) {
         let result = self
             .output
             .get_data()
             .map(|ty| FunctionResult { ty, binding: None });
 
         let naga_func = Function {
-            name: self.name.clone(),
-            arguments: std::mem::replace(&mut self.inputs, vec![]),
+            name: self.name,
+            arguments: self.inputs,
             result,
-            local_variables: std::mem::replace(&mut self.local_variables, Default::default()),
-            expressions: std::mem::replace(&mut self.expressions, Default::default()),
-            named_expressions: std::mem::replace(&mut self.named_expressions, Default::default()),
-            body: Block::from_vec(std::mem::replace(&mut self.statements, vec![])),
+            local_variables: self.local_variables,
+            expressions: self.expressions,
+            named_expressions: self.named_expressions,
+            body: self.body.unwrap_or_default(),
         };
 
-        naga_func
+        (naga_func, self.module_builder, self.type_id)
     }
 
-    pub fn build_entrypoint(mut self) -> EntryPoint {
-        let function = self.build_naga();
+    pub fn build_entrypoint(self) -> EntryPoint {
+        let name = self.name.clone();
+        let (function, _, _) = self.build_inner();
         EntryPoint {
-            name: self.name.expect("entrypoint has no name"),
+            name: name.expect("entrypoint has no name"),
             stage: ShaderStage::Compute,
             early_depth_test: None,
             workgroup_size: [64, 1, 1],
@@ -496,16 +460,15 @@ impl<'a> FunctionBuilder<'a> {
         }
     }
 
-    pub fn build(mut self) -> Result<TypeHandle, BuilderError> {
-        let naga_func = self.build_naga();
+    pub fn build(self) -> Result<TypeHandle, BuilderError> {
+        let (naga_func, module_builder, type_id) = self.build_inner();
 
-        let handle = self
-            .module_builder
+        let handle = module_builder
             .functions
             .append(naga_func, Default::default());
         let handle = handle.into();
 
-        self.module_builder.by_type_id.insert(self.type_id, handle);
+        module_builder.by_type_id.insert(type_id, handle);
 
         Ok(handle)
     }
@@ -655,10 +618,12 @@ impl<T> FnInputBinding<T> {
 impl<T: ShaderType> AsExpression<T> for FnInputBinding<T> {
     fn as_expression(
         &self,
-        function_builder: &mut FunctionBuilder,
+        block_builder: &mut BlockBuilder,
     ) -> Result<ExpressionHandle<T>, BuilderError> {
         let expr = if let Some(index) = self.index {
-            function_builder.add_expression(Expression::FunctionArgument(index as u32))?
+            block_builder
+                .function_builder
+                .add_expression(Expression::FunctionArgument(index as u32))?
         }
         else {
             ExpressionHandle::from_empty()

@@ -12,7 +12,8 @@ use syn::{
     Fields,
     Ident,
     ItemStruct,
-    Type, Visibility,
+    Type,
+    Visibility,
 };
 
 use crate::{
@@ -46,10 +47,10 @@ pub fn process_struct(
             type Result = ::embers_transpile::__private::DeferredDereference<#ty, ::embers_transpile::__private::address_space::Private>;
 
             fn access(
-                function_builder: &mut ::embers_transpile::__private::FunctionBuilder,
+                block_builder: &mut ::embers_transpile::__private::BlockBuilder,
                 base: ::embers_transpile::__private::ExpressionHandle<Self>,
             ) -> ::embers_transpile::__private::Result<Self::Result, ::embers_transpile::__private::BuilderError> {
-                ::embers_transpile::__private::access_struct_field(function_builder, base, #i)
+                ::embers_transpile::__private::access_struct_field(block_builder, base, #i)
             }
         };
 
@@ -90,10 +91,10 @@ pub fn process_struct(
         struct_fields.push(quote! {
             #vis #name: ::embers_transpile::__private::ExpressionHandle<#ty>,
         });
-        
+
         // expression for Compose impl
         compose_field_exprs.push(quote!{
-            ::embers_transpile::__private::AsExpression::as_expression(&self.#name, &mut function_builder)?.get_handle(),
+            ::embers_transpile::__private::AsExpression::as_expression(&self.#name, &mut block_builder)?.get_handle(),
         });
 
         // add trait bound to field type
@@ -160,7 +161,7 @@ pub fn process_struct(
         impl #impl_generics ::embers_transpile::__private::Compose for #ident #ty_generics #where_clause {
             fn compose(
                 &self,
-                mut function_builder: &mut ::embers_transpile::__private::FunctionBuilder
+                mut block_builder: &mut ::embers_transpile::__private::BlockBuilder
             ) -> ::embers_transpile::__private::Result<
                 ::embers_transpile::__private::ExpressionHandle<Self>,
                 ::embers_transpile::__private::BuilderError
@@ -172,9 +173,9 @@ pub fn process_struct(
                 > = [
                     #compose_field_exprs
                 ].into_iter().flatten().collect();
-                
-                let compose_expr = if let Some(struct_ty) = function_builder.module_builder.get_type_by_id_or_add_it::<Self>()?.get_data() {
-                    function_builder.add_expression::<Self>(::embers_transpile::__private::naga::Expression::Compose {
+
+                let compose_expr = if let Some(struct_ty) = block_builder.function_builder.module_builder.get_type_by_id_or_add_it::<Self>()?.get_data() {
+                    block_builder.function_builder.add_expression::<Self>(::embers_transpile::__private::naga::Expression::Compose {
                         ty: struct_ty,
                         components,
                     })?

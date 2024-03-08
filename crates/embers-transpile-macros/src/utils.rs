@@ -7,10 +7,14 @@ use proc_macro2::{
     TokenStream,
 };
 use quote::{
-    quote, quote_spanned, ToTokens
+    quote,
+    quote_spanned,
+    ToTokens,
 };
 use syn::{
-    spanned::Spanned, Lifetime, Type
+    spanned::Spanned,
+    Lifetime,
+    Type,
 };
 
 pub fn ident_to_literal(ident: &Ident) -> Literal {
@@ -121,7 +125,8 @@ pub fn map_types(ty: &mut Type, position: TypePosition) {
                 let span = ty.span();
                 *ty = syn::parse2::<Type>(quote_spanned! {span=>
                     ::embers_transpile::__private::Unit
-                }).unwrap();
+                })
+                .unwrap();
             }
             //for elem in tuple.elems.iter_mut() {
             //    map_types(elem, position);

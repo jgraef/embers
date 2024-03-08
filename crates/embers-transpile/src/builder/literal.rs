@@ -1,12 +1,16 @@
 use std::fmt::Debug;
 
-use crate::builder::{
-    expression::{ExpressionHandle, AsExpression},
-    error::BuilderError,
-    function::FunctionBuilder
-};
 use naga::Expression;
 
+use crate::builder::{
+    block::BlockBuilder,
+    error::BuilderError,
+    expression::{
+        AsExpression,
+        ExpressionHandle,
+    },
+    function::FunctionBuilder,
+};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Literal<T: LiteralValue>(<T as LiteralValue>::Value);
@@ -32,7 +36,6 @@ mod private {
 }
 use private::LiteralValue;
 
-
 trait ToNagaLiteral {
     fn to_naga(self) -> naga::Literal;
 }
@@ -48,10 +51,13 @@ macro_rules! impl_literal_value {
 macro_rules! impl_specific_as_expression {
     ($ty:ty) => {
         impl AsExpression<$ty> for Literal<$ty> {
-            fn as_expression(&self, function_builder: &mut FunctionBuilder) -> Result<ExpressionHandle<$ty>, BuilderError> {
-                function_builder.add_expression::<$ty>(
-                    Expression::Literal(self.0.to_naga())
-                )
+            fn as_expression(
+                &self,
+                block_builder: &mut BlockBuilder,
+            ) -> Result<ExpressionHandle<$ty>, BuilderError> {
+                block_builder
+                    .function_builder
+                    .add_expression::<$ty>(Expression::Literal(self.0.to_naga()))
             }
         }
     };
@@ -87,18 +93,19 @@ macro_rules! impl_generic_as_expression {
         impl AsExpression<crate::shader_std::types::primitive::$to_ty> for Literal<$any_ty> {
             fn as_expression(
                 &self,
-                function_builder: &mut FunctionBuilder,
-            ) -> Result<ExpressionHandle<crate::shader_std::types::primitive::$to_ty>, BuilderError> {
+                block_builder: &mut BlockBuilder,
+            ) -> Result<ExpressionHandle<crate::shader_std::types::primitive::$to_ty>, BuilderError>
+            {
                 let x = self.0 as $to_ty;
-                function_builder.add_expression::<crate::shader_std::types::primitive::$to_ty>(
-                    Expression::Literal(x.to_naga())
-                )
+                block_builder
+                    .function_builder
+                    .add_expression::<crate::shader_std::types::primitive::$to_ty>(
+                        Expression::Literal(x.to_naga()),
+                    )
             }
         }
-                
     };
 }
-
 
 impl_literal_value!(AnyInteger, u64);
 impl_literal_value!(AnyFloat, f64);
