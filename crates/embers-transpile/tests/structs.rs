@@ -51,12 +51,12 @@ fn it_sizes_structs_correctly() {
         a: u32,
         b: i32,
     }
-    assert_struct_size::<A>( 8);
+    assert_struct_size::<A>(8);
 
     #[transpile]
     struct B {
         a: u32,
         b: f64,
     }
-    assert_struct_size::<B>( 16);
+    assert_struct_size::<B>(16);
 }

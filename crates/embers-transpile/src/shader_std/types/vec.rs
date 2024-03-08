@@ -17,6 +17,7 @@ use crate::{
         r#type::{
             scalar_to_naga,
             AlignTo,
+            Name,
             ScalarKind,
             TypeHandle,
             Width,
@@ -55,6 +56,10 @@ macro_rules! impl_vec_n {
 
         #[allow(non_camel_case_types)]
         pub type $shorthand<T> = vec<T, $n>;
+
+        impl<T> Name for vec<T, $n> {
+            const NAME: &'static str = stringify!($shorthand);
+        }
     };
 }
 
@@ -99,7 +104,7 @@ where
                     })
             })
             .transpose()?
-            .unwrap_or_else(|| ExpressionHandle::from_empty());
+            .unwrap_or_else(|| ExpressionHandle::empty());
         Ok(expr)
     }
 }
@@ -165,7 +170,11 @@ macro_rules! impl_mat_n_m {
         }
 
         #[allow(non_camel_case_types)]
-        pub type $shorthand<T> = vec<T, $n>;
+        pub type $shorthand<T> = mat<T, $n, $m>;
+
+        impl<T> Name for mat<T, $n, $m> {
+            const NAME: &'static str = stringify!($shorthand);
+        }
     };
 }
 

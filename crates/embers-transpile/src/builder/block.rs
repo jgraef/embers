@@ -46,7 +46,7 @@ impl<'m, 'f> BlockBuilder<'m, 'f> {
             .get_type_by_id_or_add_it::<R>()?;
 
         let ret = if ret_type.is_zero_sized() {
-            ExpressionHandle::<R>::from_empty()
+            ExpressionHandle::<R>::empty()
         }
         else {
             let expr = Expression::CallResult(naga_fun);

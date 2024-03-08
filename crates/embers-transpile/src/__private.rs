@@ -34,6 +34,7 @@ pub use crate::{
             EntrypointGenerator,
             FunctionBuilder,
             GenerateCall,
+            InlineCallGenerator,
             PhantomReceiver,
             PhantomReceiverPointer,
         },

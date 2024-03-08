@@ -29,6 +29,12 @@ pub struct TokenBuffer {
 }
 
 impl TokenBuffer {
+    pub fn finish(self) -> TokenStream {
+        self.buf
+    }
+}
+
+impl TokenBuffer {
     pub fn push(&mut self, tokens: impl ToTokens) {
         tokens.to_tokens(&mut self.buf);
     }
@@ -72,14 +78,14 @@ pub fn map_types(ty: &mut Type, position: TypePosition) {
         Type::Array(type_array) => {
             let mut elem = type_array.elem.clone();
             map_types(&mut elem, position);
-            let len = &type_array.len;
+            let len = type_array.len.clone();
             let span = ty.span();
             *ty = syn::parse2::<Type>(quote_spanned! {span=>
-                ::embers_transpile::__private::Array<#elem, { len }>
+                ::embers_transpile::__private::Array<#elem, { #len }>
             })
             .unwrap();
         }
-        Type::BareFn(bare_fn) => todo!(),
+        Type::BareFn(_bare_fn) => todo!(),
         Type::Group(group) => map_types(&mut group.elem, position),
         Type::ImplTrait(_) => {}
         Type::Infer(_) => {}

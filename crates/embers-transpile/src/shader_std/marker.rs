@@ -33,7 +33,7 @@ impl<T> AlignTo for PhantomData<T> {
 impl<T: 'static> crate::shader_std::default::Default for PhantomData<T> {
     fn default() -> Self {
         ::embers_transpile::__private::intrinsic! {
-            ::embers_transpile::__private::ExpressionHandle::<Self>::from_empty()
+            ::embers_transpile::__private::ExpressionHandle::<Self>::empty()
         }
     }
 }

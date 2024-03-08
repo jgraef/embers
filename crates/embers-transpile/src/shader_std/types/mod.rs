@@ -38,7 +38,7 @@ impl AlignTo for Unit {
 impl crate::shader_std::default::Default for Unit {
     fn default() -> Self {
         ::embers_transpile::__private::intrinsic! {
-            ::embers_transpile::__private::ExpressionHandle::<Self>::from_empty()
+            ::embers_transpile::__private::ExpressionHandle::<Self>::empty()
         }
     }
 }

@@ -1,7 +1,7 @@
 use std::{
-    any::TypeId,
+    any::{type_name, TypeId},
     collections::HashMap,
-    marker::PhantomData,
+    marker::PhantomData, thread::Builder,
 };
 
 use naga::{
@@ -16,26 +16,22 @@ use naga::{
     FunctionResult,
     Handle,
     LocalVariable,
-    ShaderStage,
+    ShaderStage, Type, TypeInner,
 };
 
 use super::{
-    block::BlockBuilder,
-    error::BuilderError,
-    expression::{
+    block::BlockBuilder, error::BuilderError, expression::{
         AsExpression,
         ExpressionHandle,
-    },
-    module::ModuleBuilder,
-    pointer::{
+    }, module::ModuleBuilder, pointer::{
         AddressSpace,
         Pointer,
-    },
-    r#type::{
-        ShaderType,
-        TypeHandle,
-    },
-    variable::LetMutBinding,
+    }, r#struct::{align_to, layout_struct_members, StructField}, r#type::{
+        AlignTo, ShaderType, TypeHandle, Width
+    }, variable::{
+        LetMutBinding,
+        ScopeId,
+    }
 };
 use crate::utils::try_all;
 
@@ -278,8 +274,7 @@ impl<T: ShaderType + ?Sized, A: AddressSpace> Copy for PhantomReceiverPointer<T,
 pub struct FunctionBuilder<'m> {
     pub module_builder: &'m mut ModuleBuilder,
     receiver: Option<TypeHandle>,
-    name: Option<String>,
-    type_id: TypeId,
+    pub(super) name: Option<String>,
     inputs: Vec<FunctionArgument>,
     output: TypeHandle,
     expressions: Arena<Expression>,
@@ -287,15 +282,18 @@ pub struct FunctionBuilder<'m> {
     local_variables: Arena<LocalVariable>,
     const_expressions: HashMap<Handle<Expression>, bool>,
     pub(super) body: Option<Block>,
+    captures: Option<CapturesBuilder>,
+    scope: ScopeId,
 }
 
 impl<'m> FunctionBuilder<'m> {
-    pub fn new<F: 'static>(module_builder: &'m mut ModuleBuilder) -> Self {
+    pub fn new(module_builder: &'m mut ModuleBuilder, can_capture: bool) -> Self {
+        let scope = module_builder.scope_id();
+        let captures = can_capture.then(|| CapturesBuilder::default());
         Self {
             module_builder,
             receiver: None,
             name: None,
-            type_id: TypeId::of::<F>(),
             inputs: vec![],
             output: TypeHandle::default(),
             expressions: Default::default(),
@@ -303,6 +301,8 @@ impl<'m> FunctionBuilder<'m> {
             local_variables: Default::default(),
             const_expressions: HashMap::default(),
             body: None,
+            captures,
+            scope,
         }
     }
 
@@ -372,7 +372,7 @@ impl<'m> FunctionBuilder<'m> {
         let is_const = self.expression_is_const(&expr)?;
         let handle = self.expressions.append(expr, Default::default());
         self.const_expressions.insert(handle, is_const);
-        let mut handle = ExpressionHandle::from_handle(handle);
+        let mut handle = ExpressionHandle::new(handle);
         if is_const {
             handle.promote_const();
         }
@@ -413,10 +413,10 @@ impl<'m> FunctionBuilder<'m> {
                 Default::default(),
             );
 
-            LetMutBinding::from_handle(handle)
+            LetMutBinding::new(handle, self.scope)
         }
         else {
-            LetMutBinding::from_empty()
+            LetMutBinding::empty(self.scope)
         };
 
         Ok(let_mut)
@@ -426,7 +426,45 @@ impl<'m> FunctionBuilder<'m> {
         BlockBuilder::new(self)
     }
 
-    fn build_inner(self) -> (naga::Function, &'m mut ModuleBuilder, TypeId) {
+    pub fn build(mut self) -> Result<(Function, Option<Captures>), BuilderError> {
+        // add argument for captures
+        let mut captures = None;
+        if let Some(captures_builder) = self.captures {
+            if let Some(input) = captures_builder.input {
+                let arg_index = self.inputs.len();
+                            
+                let (members, span) = layout_struct_members(captures_builder.fields);
+        
+                let ty = self
+                    .module_builder
+                    .types
+                    .insert(
+                        naga::Type {
+                            name: self.name.clone(),
+                            inner: TypeInner::Struct {
+                                members,
+                                span,
+                            }
+                        },
+                        naga::Span::default(),
+                    );
+
+                self.inputs.push(FunctionArgument {
+                    name: Some("captures".to_owned()),
+                    ty,
+                    binding: None,
+                });
+
+                // replace placeholder expression
+                *self.expressions.get_mut(input) = Expression::FunctionArgument(arg_index as _);
+
+                captures = Some(Captures {
+                    ty,
+                    values: captures_builder.field_values,
+                });
+            }
+        }
+
         let result = self
             .output
             .get_data()
@@ -442,32 +480,7 @@ impl<'m> FunctionBuilder<'m> {
             body: self.body.unwrap_or_default(),
         };
 
-        (naga_func, self.module_builder, self.type_id)
-    }
-
-    pub fn build_entrypoint(self) -> EntryPoint {
-        let name = self.name.clone();
-        let (function, _, _) = self.build_inner();
-        EntryPoint {
-            name: name.expect("entrypoint has no name"),
-            stage: ShaderStage::Compute,
-            early_depth_test: None,
-            workgroup_size: [64, 1, 1],
-            function,
-        }
-    }
-
-    pub fn build(self) -> Result<TypeHandle, BuilderError> {
-        let (naga_func, module_builder, type_id) = self.build_inner();
-
-        let handle = module_builder
-            .functions
-            .append(naga_func, Default::default());
-        let handle = handle.into();
-
-        module_builder.by_type_id.insert(type_id, handle);
-
-        Ok(handle)
+        Ok((naga_func, captures))
     }
 
     pub(crate) fn expression_is_const(
@@ -585,6 +598,74 @@ impl<'m> FunctionBuilder<'m> {
             &mut self.const_expressions,
         )
     }
+
+    pub fn capture<T: ShaderType + Width + AlignTo>(&mut self, scope: ScopeId, expression: ExpressionHandle<T>) -> Result<ExpressionHandle<T>, BuilderError> {
+        let expression = if scope == self.scope {
+            // we don't actually capture it because the variable is in this function's scope.
+            expression
+        }
+        else {
+            let captures = self.captures.as_mut().ok_or_else(|| BuilderError::FunctionCantCapture { name: self.name.clone() })?;
+
+            if let Some(handle) = expression.get_handle() {
+                // map outer expression to inner expression
+                let handle = if let Some(handle) = captures.expressions.get(&handle) {
+                    *handle
+                }
+                else {
+                    // the inner expression will be field access into a generated struct
+                    let input = captures.input.get_or_insert_with(|| {
+                        // placeholder
+                        self.expressions.append(Expression::FunctionArgument(0), Default::default())
+                    });
+
+                    let field_index = captures.fields.len();
+                    captures.fields.push(StructField {
+                        name: None,
+                        ty: self.module_builder.get_type_by_id_or_add_it::<T>()?.try_get_data()?,
+                        alignment: <T as AlignTo>::ALIGN_TO,
+                        width: <T as Width>::WIDTH,
+                    });
+
+                    captures.field_values.push(handle);
+
+                    let out_handle = self.expressions.append(
+                        Expression::AccessIndex { base: *input, index: field_index as _ },
+                        Default::default()
+                    );
+
+                    captures.expressions.insert(handle, out_handle);
+                    out_handle
+                };
+
+                ExpressionHandle::<T>::new(handle)
+            }
+            else {
+                // empty type
+                expression
+            }
+        };
+        Ok(expression)
+    }
+}
+
+#[derive(Debug, Default)]
+struct CapturesBuilder {
+    /// handle for FunctionArgument expression
+    input: Option<Handle<Expression>>,
+
+    /// struct fields for captures
+    fields: Vec<StructField>,
+
+    field_values: Vec<Handle<Expression>>,
+
+    /// maps outer expressions to inner expressions (access into captures struct)
+    expressions: HashMap<Handle<Expression>, Handle<Expression>>,
+}
+
+pub struct Captures {
+    pub ty: Handle<Type>,
+    pub values: Vec<Handle<Expression>>,
 }
 
 pub struct FnInputBinding<T> {
@@ -623,7 +704,7 @@ impl<T: ShaderType> AsExpression<T> for FnInputBinding<T> {
                 .add_expression(Expression::FunctionArgument(index as u32))?
         }
         else {
-            ExpressionHandle::from_empty()
+            ExpressionHandle::empty()
         };
 
         Ok(expr)

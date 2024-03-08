@@ -1,70 +1,47 @@
-use proc_macro2::TokenStream;
+use darling::{
+    FromAttributes,
+    FromMeta,
+};
 use syn::{
-    parenthesized,
-    parse::{
-        Parse,
-        ParseStream,
-    },
-    punctuated::Punctuated,
-    token::{
-        Move,
-        Paren,
-    },
-    Ident,
-    Pat,
-    Token,
+    Attribute,
+    ExprClosure,
 };
 
-use crate::error::Error;
+use crate::{
+    error::Error,
+    expression::ExprOut,
+    utils::{
+        NameGen,
+        TokenBuffer,
+    },
+};
 
-pub struct Capture {
-    pub move_token: Token![move],
-    pub paren_token: Paren,
-    pub vars: Punctuated<Ident, Token![,]>,
+#[derive(Debug, FromAttributes)]
+#[darling(attributes(transpile))]
+pub struct ClosureAttributes {
+    #[darling(flatten)]
+    pub meta: ClosureMeta,
 }
 
-impl Parse for Capture {
-    fn parse(input: ParseStream) -> Result<Self, syn::Error> {
-        let content;
-        Ok(Self {
-            move_token: input.parse()?,
-            paren_token: parenthesized!(content in input),
-            vars: content.parse_terminated(Ident::parse, Token![,])?,
-        })
+#[derive(Debug, FromMeta)]
+pub struct ClosureMeta {
+    #[darling(default)]
+    pub inline: bool,
+}
+
+impl ClosureMeta {
+    pub fn parse(item_attributes: &[Attribute]) -> Result<Self, Error> {
+        let meta = ClosureAttributes::from_attributes(item_attributes)?.meta;
+        Ok(meta)
     }
 }
 
-pub struct Closure {
-    pub capture: Option<Capture>,
-    pub or1_token: Token![|],
-    pub args: Punctuated<Pat, Token![,]>,
-    pub or2_token: Token![|],
-}
+pub fn process_closure(
+    closure: &ExprClosure,
+    output: &mut TokenBuffer,
+    name_gen: &mut NameGen,
+) -> Result<ExprOut, Error> {
+    let attributes = ClosureMeta::parse(&closure.attrs)?;
 
-impl Parse for Closure {
-    fn parse(input: ParseStream) -> Result<Self, syn::Error> {
-        let lookahead = input.lookahead1();
-        let capture = if lookahead.peek(Token![move]) {
-            Some(Capture::parse(input)?)
-        }
-        else {
-            None
-        };
-        let or1_token = input.parse()?;
-        let args = input.parse_terminated(Pat::parse_single, Token![,])?;
-        let or2_token = input.parse()?;
-
-        Ok(Self {
-            capture,
-            or1_token,
-            args,
-            or2_token,
-        })
-    }
-}
-
-impl Closure {
-    pub fn process(&self) -> Result<TokenStream, Error> {
-        todo!();
-    }
+    todo!();
 }

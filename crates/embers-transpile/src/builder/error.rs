@@ -1,6 +1,7 @@
 use super::r#type::TypeHandle;
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum BuilderError {
     #[error("type {ty} doesn't have a naga type")]
     NoNagaType { ty: &'static str },
@@ -16,4 +17,6 @@ pub enum BuilderError {
     NotConst,
     #[error("bad handle")]
     BadHandle,
+    #[error("function ({name:?}) can't capture variables")]
+    FunctionCantCapture { name: Option<String> },
 }

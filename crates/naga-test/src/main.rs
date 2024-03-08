@@ -157,15 +157,15 @@ mod shader {
 }
 
 #[transpile]
-mod struct_test {
-    pub struct Foo {
-        pub x: u32,
-        y: i32,
+mod test {
+    #[transpile(inline)]
+    fn bar(a: u32, b: u32) -> u32 {
+        3
     }
 
     #[transpile(entrypoint)]
     pub fn test() {
-        let mut x = Foo { x: 42, y: 123 };
+        let mut x = bar(1, 2);
     }
 }
 
@@ -182,10 +182,14 @@ fn main() -> Result<(), Error> {
     @binding(0)
     var<storage, read> readable: array<i32>;
     
+    fn bar(a: u32, b: u32) -> u32 {
+        return 3;
+    }
+
     @compute
     @workgroup_size(64, 1, 1)
     fn foo() {
-        let x = arrayLength(readable);
+        bar(1, 2);
     }
     "#;
 
@@ -195,7 +199,7 @@ fn main() -> Result<(), Error> {
     //use embers_transpile::shader_std;
     //let transpiled = shader::map::<shader_std::types::primitive::i32,
     // shader::AddOp>()?;
-    let transpiled = struct_test::test()?;
+    let transpiled = test::test()?;
     println!("{:#?}", transpiled.naga);
     println!("");
     println!("{}", to_wgsl(&transpiled.naga)?);

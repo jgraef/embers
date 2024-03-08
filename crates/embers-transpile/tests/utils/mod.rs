@@ -4,7 +4,9 @@ use embers_transpile::{
     builder::{
         module::ModuleBuilder,
         r#type::{
-            AlignTo, Name, Width
+            AlignTo,
+            Name,
+            Width,
         },
     },
     ShaderType,

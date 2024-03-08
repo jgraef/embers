@@ -2,6 +2,7 @@
 
 mod closure;
 mod error;
+mod expression;
 mod function;
 mod item;
 mod module;
@@ -9,7 +10,6 @@ mod r#struct;
 mod r#trait;
 mod utils;
 
-use closure::Closure;
 use darling::ast::NestedMeta;
 use proc_macro::TokenStream;
 use proc_macro_error::proc_macro_error;
@@ -35,13 +35,5 @@ pub fn transpile(attrs: TokenStream, input: TokenStream) -> TokenStream {
         Err(e) => e.write_errors().into(),
     };
 
-    output.into()
-}
-
-#[proc_macro_error]
-#[proc_macro]
-pub fn closure(input: TokenStream) -> TokenStream {
-    let closure = parse_macro_input!(input as Closure);
-    let output = closure.process().unwrap();
     output.into()
 }

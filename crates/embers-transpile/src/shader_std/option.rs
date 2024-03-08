@@ -1,6 +1,16 @@
 use embers_transpile_macros::transpile;
 
-use crate::shader_std::types::primitive::bool;
+use crate::{
+    shader_std::{
+        default::Default,
+        types::primitive::bool,
+    },
+    ShaderType,
+    __private::{
+        AlignTo,
+        Width,
+    },
+};
 
 #[transpile]
 struct Option<T> {
@@ -9,9 +19,12 @@ struct Option<T> {
 }
 
 //#[transpile]
-//impl<T: Default + ShaderType> Default for Option<T> {
+//impl<T: Default + ShaderType + Width + AlignTo> Default for Option<T> {
 //    fn default() -> Self {
-//        //None
+//        Self {
+//            discriminant: false,
+//            value: Default::default(),
+//        }
 //    }
 //}
 

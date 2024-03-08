@@ -30,7 +30,7 @@ pub enum ExpressionHandle<T: ?Sized> {
 }
 
 impl<T: ?Sized> ExpressionHandle<T> {
-    pub fn from_handle(handle: Handle<Expression>) -> Self {
+    pub fn new(handle: Handle<Expression>) -> Self {
         Self::Handle {
             handle,
             is_const: false,
@@ -38,7 +38,7 @@ impl<T: ?Sized> ExpressionHandle<T> {
         }
     }
 
-    pub fn from_empty() -> Self {
+    pub fn empty() -> Self {
         Self::Empty { _ty: PhantomData }
     }
 

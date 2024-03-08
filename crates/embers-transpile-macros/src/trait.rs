@@ -14,10 +14,7 @@ use crate::{
         process_impl_function,
         transform_signature_to_generator,
     },
-    utils::{
-        ident_to_literal,
-        TokenBuffer,
-    },
+    utils::TokenBuffer,
 };
 
 pub fn process_trait(
@@ -26,14 +23,13 @@ pub fn process_trait(
 ) -> Result<TokenStream, Error> {
     let vis = &input.vis;
     let ident = &input.ident;
-    let ident_literal = ident_to_literal(&ident);
 
     let mut output = TokenBuffer::default();
 
     for item in &input.items {
         match item {
             TraitItem::Fn(fn_item) => {
-                let (sig, ret, _) = transform_signature_to_generator(&fn_item.sig);
+                let (sig, _ret, _has_receiver) = transform_signature_to_generator(&fn_item.sig);
                 output.push(quote! { #sig; });
             }
             _ => output.push(quote! { #item }),

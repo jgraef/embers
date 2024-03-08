@@ -229,7 +229,7 @@ pub fn process_struct(
                     })?
                 }
                 else {
-                    ::embers_transpile::__private::ExpressionHandle::from_empty()
+                    ::embers_transpile::__private::ExpressionHandle::empty()
                 };
 
                 Ok(compose_expr)

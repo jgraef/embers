@@ -99,24 +99,6 @@ impl<T: ShaderType, A: AddressSpace> AsExpression<Pointer<T, A>> for Pointer<T, 
     }
 }
 
-/*
-impl<T: ShaderType, A: AddressSpace> FromExpression<Pointer<T, A>> for Pointer<T, A> {
-    fn from_expression(handle: ExpressionHandle<Pointer<T, A>>) -> Result<Self, BuilderError> {
-        Ok(Self {
-            handle,
-            _ty: PhantomData,
-            _space: PhantomData,
-        })
-    }
-}
-
-impl<T: ShaderType, A: AddressSpace> IntoExpression<Pointer<T, A>> for Pointer<T, A> {
-    fn into_expression(self) -> ExpressionHandle<Self> {
-        self.handle
-    }
-}
- */
-
 impl<T: ShaderType, A: AddressSpace> ExpressionHandle<Pointer<T, A>> {
     pub fn load(
         &self,
@@ -130,7 +112,7 @@ impl<T: ShaderType, A: AddressSpace> ExpressionHandle<Pointer<T, A>> {
                 block_builder.add_emit(&expr)?;
                 expr
             }
-            ExpressionHandle::Empty { _ty } => ExpressionHandle::from_empty(),
+            ExpressionHandle::Empty { _ty } => ExpressionHandle::empty(),
         };
 
         Ok(expr)

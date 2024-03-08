@@ -2,9 +2,7 @@ use std::marker::PhantomData;
 
 use naga::{
     Expression,
-    Handle,
     LocalVariable,
-    ResourceBinding,
 };
 
 use super::{
@@ -24,6 +22,9 @@ use super::{
     r#type::ShaderType,
 };
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ScopeId(pub(super) usize);
+
 pub trait Assign<T> {
     fn assign<E: AsExpression<T>>(
         &self,
@@ -36,44 +37,50 @@ pub trait Assign<T> {
 /// optionally initialized with an expression.
 pub struct LetBinding<T> {
     value: Option<ExpressionHandle<T>>,
+    scope: ScopeId,
 }
 
 impl<T> LetBinding<T> {
-    pub fn unbound() -> Self {
-        Self { value: None }
+    pub fn unbound(scope: ScopeId) -> Self {
+        Self { value: None, scope }
     }
 
-    pub fn from_expr(expr: ExpressionHandle<T>) -> Self {
-        Self { value: Some(expr) }
+    pub fn from_expr(expr: ExpressionHandle<T>, scope: ScopeId) -> Self {
+        Self { value: Some(expr), scope }
     }
 }
 
 impl<T> AsExpression<T> for LetBinding<T> {
     fn as_expression(
         &self,
-        _block_builder: &mut BlockBuilder,
+        block_builder: &mut BlockBuilder,
     ) -> Result<ExpressionHandle<T>, BuilderError> {
-        self.value.clone().ok_or(BuilderError::LetUnbound)
+        let value = self.value.clone().ok_or(BuilderError::LetUnbound)?;
+        //let value = block_builder.function_builder.capture(self.scope, value)?;
+        Ok(value)
     }
 }
 
 /// A mutable let binding, represented by a local variable in naga.
 pub struct LetMutBinding<T> {
     handle: Option<naga::Handle<LocalVariable>>,
+    scope: ScopeId,
     _ty: PhantomData<T>,
 }
 
 impl<T> LetMutBinding<T> {
-    pub fn from_handle(handle: naga::Handle<LocalVariable>) -> Self {
+    pub fn new(handle: naga::Handle<LocalVariable>, scope: ScopeId) -> Self {
         Self {
             handle: Some(handle),
+            scope,
             _ty: PhantomData,
         }
     }
 
-    pub fn from_empty() -> Self {
+    pub fn empty(scope: ScopeId) -> Self {
         Self {
             handle: None,
+            scope,
             _ty: PhantomData,
         }
     }
@@ -100,10 +107,11 @@ impl<T: ShaderType> AsPointer for LetMutBinding<T> {
         function_builder: &mut FunctionBuilder,
     ) -> Result<ExpressionHandle<Pointer<T, Self::AddressSpace>>, BuilderError> {
         let expr = if let Some(handle) = self.handle {
+            // todo: capture
             function_builder.add_expression(Expression::LocalVariable(handle))?
         }
         else {
-            ExpressionHandle::from_empty()
+            ExpressionHandle::empty()
         };
 
         Ok(expr)
@@ -153,7 +161,7 @@ impl<T: ?Sized, A> GlobalVariable<T, A> {
         }
     }
 
-    pub fn from_empty() -> Self {
+    pub fn empty() -> Self {
         Self {
             handle: GlobalVariableHandle::Empty,
             _ty: PhantomData,
@@ -173,7 +181,7 @@ impl<T: ShaderType + ?Sized, A: AddressSpace> AsExpression<Pointer<T, A>> for Gl
                     .function_builder
                     .add_expression(Expression::GlobalVariable(*handle))?
             }
-            GlobalVariableHandle::Empty => ExpressionHandle::from_empty(),
+            GlobalVariableHandle::Empty => ExpressionHandle::empty(),
         };
         Ok(expression_handle)
     }

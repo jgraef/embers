@@ -52,12 +52,12 @@ pub trait FieldAccess<F: FieldAccessor> {
     ) -> Result<Self::Result, BuilderError>;
 }
 
-#[derive(Debug)]
-struct StructField {
-    name: Option<String>,
-    ty: Handle<Type>,
-    alignment: u32,
-    width: u32,
+#[derive(Clone, Debug)]
+pub(super) struct StructField {
+    pub name: Option<String>,
+    pub ty: Handle<Type>,
+    pub alignment: u32,
+    pub width: u32,
 }
 
 pub struct StructBuilder<'a> {
@@ -116,19 +116,7 @@ impl<'a> StructBuilder<'a> {
     }
 
     pub fn build<T: ShaderType>(self) -> TypeHandle {
-        let mut offset = 0;
-
-        let mut members = Vec::with_capacity(self.fields.len());
-        for field in self.fields {
-            offset = align_to(offset, field.alignment);
-            members.push(StructMember {
-                name: field.name.clone(),
-                ty: field.ty,
-                binding: None,
-                offset,
-            });
-            offset += field.width;
-        }
+        let (members, span) = layout_struct_members(self.fields);
 
         let handle = if members.is_empty() {
             self.module_builder.add_empty_type::<T>()
@@ -142,7 +130,7 @@ impl<'a> StructBuilder<'a> {
                 Some(self.name),
                 naga::TypeInner::Struct {
                     members,
-                    span: offset,
+                    span,
                 },
             )
         };
@@ -151,12 +139,32 @@ impl<'a> StructBuilder<'a> {
     }
 }
 
-fn align_to(mut address: u32, alignment: u32) -> u32 {
+pub(super) fn align_to(mut address: u32, alignment: u32) -> u32 {
     let unaligned_by = address % alignment;
     if unaligned_by > 0 {
         address += alignment - unaligned_by;
     }
     address
+}
+
+pub(super) fn layout_struct_members(fields: impl IntoIterator<Item = StructField>) -> (Vec<StructMember>, u32) {
+    let mut offset = 0;
+
+    let members = fields.into_iter()
+        .map(|field| {
+            offset = align_to(offset, field.alignment);
+            let member = StructMember {
+                name: field.name.clone(),
+                ty: field.ty,
+                binding: None,
+                offset,
+            };
+            offset += field.width;
+            member
+        })
+        .collect();
+
+    (members, offset)
 }
 
 /// todo: how do we know the address space?
@@ -188,7 +196,7 @@ pub fn access_struct_field<T: ShaderType, U: ShaderType>(
         _ => None,
     };
 
-    let handle = handle.unwrap_or_else(|| ExpressionHandle::from_empty());
+    let handle = handle.unwrap_or_else(|| ExpressionHandle::empty());
 
     Ok(DeferredDereference::new(handle))
 }

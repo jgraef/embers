@@ -8,6 +8,7 @@ use naga::{
     EntryPoint,
     Function,
     ResourceBinding,
+    ShaderStage,
     Type,
     UniqueArena,
 };
@@ -15,8 +16,7 @@ use naga::{
 use super::{
     error::BuilderError,
     function::{
-        FunctionBuilder,
-        GenerateFunction,
+        Captures, FunctionBuilder, GenerateFunction
     },
     pointer::AddressSpace,
     r#struct::StructBuilder,
@@ -27,6 +27,7 @@ use super::{
     variable::{
         GlobalVariable,
         GlobalVariableHandle,
+        ScopeId,
     },
 };
 
@@ -44,6 +45,7 @@ pub struct ModuleBuilder {
     entry_points: Vec<EntryPoint>,
     global_variables: Arena<naga::GlobalVariable>,
     global_variable_by_type_id: HashMap<String, GlobalVariableHandle>,
+    next_scope_id: usize,
 }
 
 impl Default for ModuleBuilder {
@@ -56,6 +58,7 @@ impl Default for ModuleBuilder {
             entry_points: vec![],
             global_variables: Default::default(),
             global_variable_by_type_id: Default::default(),
+            next_scope_id: 0,
         }
     }
 }
@@ -112,18 +115,34 @@ impl ModuleBuilder {
             Ok(*handle)
         }
         else {
-            let mut function_builder = FunctionBuilder::new::<G>(self);
+            let mut function_builder = FunctionBuilder::new(self, false);
             gen.generate(&mut function_builder)?;
-            let handle = function_builder.build()?;
+
+            let (function, captures) = function_builder.build()?;
+            assert!(captures.is_none());
+            let handle = self.functions.append(function, Default::default());
+            let handle = handle.into();
+
             self.by_type_id.insert(type_id, handle);
             Ok(handle)
         }
     }
 
     pub fn add_entrypoint<G: GenerateFunction>(&mut self, gen: G) -> Result<(), BuilderError> {
-        let mut function_builder = FunctionBuilder::new::<G>(self);
+        let mut function_builder = FunctionBuilder::new(self, false);
         gen.generate(&mut function_builder)?;
-        let entry_point = function_builder.build_entrypoint();
+
+        let name = function_builder.name.clone();
+        let (function, captures) = function_builder.build()?;
+        assert!(captures.is_none());
+
+        let entry_point = EntryPoint {
+            name: name.expect("entrypoint has no name"),
+            stage: ShaderStage::Compute,
+            early_depth_test: None,
+            workgroup_size: [64, 1, 1],
+            function,
+        };
         self.entry_points.push(entry_point);
 
         Ok(())
@@ -188,5 +207,35 @@ impl ModuleBuilder {
         else {
             Ok(true)
         }
+    }
+
+    pub fn create_closure<C: 'static, G: GenerateFunction>(
+        &mut self,
+        gen: &G,
+    ) -> Result<(TypeHandle, Option<Captures>), BuilderError> {
+        let type_id = TypeId::of::<C>();
+        assert!(
+            !self.by_type_id.contains_key(&type_id),
+            "closure type was already registered"
+        );
+
+        let mut function_builder = FunctionBuilder::new(self, true);
+        gen.generate(&mut function_builder)?;
+
+        let (function, captures) = function_builder.build()?;
+        let func_handle = self.functions.append(function, Default::default());
+        let handle = TypeHandle {
+            data: captures.as_ref().map(|captures| captures.ty),
+            code: Some(func_handle),
+        };
+
+        self.by_type_id.insert(type_id, handle);
+        Ok((handle, captures))
+    }
+
+    pub fn scope_id(&mut self) -> ScopeId {
+        let id = self.next_scope_id;
+        self.next_scope_id += 1;
+        ScopeId(id)
     }
 }
