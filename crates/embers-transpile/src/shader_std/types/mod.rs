@@ -5,17 +5,15 @@ pub mod vec;
 
 use embers_transpile_macros::transpile;
 
-use crate::{
-    builder::{
-        error::BuilderError,
-        module::ModuleBuilder,
-        r#type::{
-            AlignTo,
-            TypeHandle,
-            Width,
-        },
+pub use crate::builder::r#type::ShaderType;
+use crate::builder::{
+    error::BuilderError,
+    module::ModuleBuilder,
+    r#type::{
+        AlignTo,
+        TypeHandle,
+        Width,
     },
-    ShaderType,
 };
 
 pub struct Unit {

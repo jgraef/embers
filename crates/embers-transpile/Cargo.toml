@@ -14,3 +14,6 @@ half = { version = "2.3", optional = true }
 [dependencies.embers-transpile-macros]
 version = "0.1.0"
 path = "../embers-transpile-macros"
+
+[dev-dependencies]
+naga = { version = "0.19", features = ["wgsl-in"] }

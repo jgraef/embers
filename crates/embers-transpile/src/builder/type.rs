@@ -21,6 +21,10 @@ pub trait AlignTo {
     const ALIGN_TO: u32;
 }
 
+pub trait Name {
+    const NAME: &'static str;
+}
+
 pub trait ScalarKind {
     const KIND: naga::ScalarKind;
 }

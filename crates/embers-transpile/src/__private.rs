@@ -63,6 +63,7 @@ pub use crate::{
         },
         r#type::{
             AlignTo,
+            Name,
             ShaderType,
             TypeHandle,
             Width,

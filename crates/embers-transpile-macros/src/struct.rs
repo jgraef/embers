@@ -210,13 +210,17 @@ pub fn process_struct(
                 ::embers_transpile::__private::ExpressionHandle<Self>,
                 ::embers_transpile::__private::BuilderError
             > {
-                let components: Vec<
-                    ::embers_transpile::__private::naga::Handle<
-                        ::embers_transpile::__private::naga::Expression
-                    >
-                > = [
+                let components: [
+                    ::embers_transpile::__private::Option<
+                        ::embers_transpile::__private::naga::Handle<
+                            ::embers_transpile::__private::naga::Expression
+                        >
+                    >;
+                    #num_fields
+                ] = [
                     #compose_field_exprs
-                ].into_iter().flatten().collect();
+                ];
+                let components = components.into_iter().flatten().collect::<Vec<_>>();
 
                 let compose_expr = if let Some(struct_ty) = block_builder.function_builder.module_builder.get_type_by_id_or_add_it::<Self>()?.get_data() {
                     block_builder.function_builder.add_expression::<Self>(::embers_transpile::__private::naga::Expression::Compose {
@@ -253,6 +257,16 @@ pub fn process_struct(
     output.push(quote!{
         impl #impl_generics ::embers_transpile::__private::Width for #ident #ty_generics #where_clause {
             const WIDTH: ::embers_transpile::__private::std::primitive::u32 = #width_const;
+        }
+    });
+
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    output.push(quote!{
+        impl #impl_generics ::embers_transpile::__private::AlignTo for #ident #ty_generics #where_clause {
+            const ALIGN_TO: ::embers_transpile::__private::std::primitive::u32 = 4; // fixme
+        }
+        impl #impl_generics ::embers_transpile::__private::Name for #ident #ty_generics #where_clause {
+            const NAME: &'static ::embers_transpile::__private::std::primitive::str = #ident_literal;
         }
     });
 

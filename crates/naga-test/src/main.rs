@@ -165,7 +165,7 @@ mod struct_test {
 
     #[transpile(entrypoint)]
     pub fn test() {
-        let x = Foo { x: 42, y: 123 };
+        let mut x = Foo { x: 42, y: 123 };
     }
 }
 
