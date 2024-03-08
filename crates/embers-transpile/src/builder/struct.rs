@@ -1,10 +1,4 @@
-use std::{
-    any::TypeId,
-    marker::{
-        ConstParamTy,
-        PhantomData,
-    },
-};
+use std::any::TypeId;
 
 use naga::{
     Expression,
@@ -20,18 +14,16 @@ use super::{
         AsExpression,
         ExpressionHandle,
     },
-    function::FunctionBuilder,
     module::ModuleBuilder,
     pointer::{
         address_space,
-        AddressSpace,
-        AsPointer,
         DeferredDereference,
-        Pointer,
     },
     r#type::{
+        AlignTo,
         ShaderType,
         TypeHandle,
+        Width,
     },
 };
 
@@ -44,8 +36,8 @@ pub trait Compose {
 
 pub trait FieldAccessor {}
 
-pub struct UnnamedFieldAccessor<const INDEX: usize>;
-impl<const INDEX: usize> FieldAccessor for UnnamedFieldAccessor<{ INDEX }> {}
+pub struct UnnamedFieldAccessor<const INDEX: u32>;
+impl<const INDEX: u32> FieldAccessor for UnnamedFieldAccessor<{ INDEX }> {}
 
 pub struct NamedFieldAccessor<const NAME: &'static str>;
 impl<const NAME: &'static str> FieldAccessor for NamedFieldAccessor<{ NAME }> {}
@@ -64,6 +56,8 @@ pub trait FieldAccess<F: FieldAccessor> {
 struct StructField {
     name: Option<String>,
     ty: Handle<Type>,
+    alignment: u32,
+    width: u32,
 }
 
 pub struct StructBuilder<'a> {
@@ -85,7 +79,7 @@ impl<'a> StructBuilder<'a> {
         }
     }
 
-    pub fn add_named_field<T: ShaderType>(
+    pub fn add_named_field<T: ShaderType + Width + AlignTo>(
         &mut self,
         name: impl ToString,
     ) -> Result<(), BuilderError> {
@@ -93,17 +87,24 @@ impl<'a> StructBuilder<'a> {
         Ok(())
     }
 
-    pub fn add_unnamed_field<T: ShaderType>(&mut self) -> Result<(), BuilderError> {
+    pub fn add_unnamed_field<T: ShaderType + Width + AlignTo>(
+        &mut self,
+    ) -> Result<(), BuilderError> {
         self.add_field::<T>(None)?;
         Ok(())
     }
 
-    pub fn add_field<T: ShaderType>(&mut self, name: Option<String>) -> Result<(), BuilderError> {
+    pub fn add_field<T: ShaderType + Width + AlignTo>(
+        &mut self,
+        name: Option<String>,
+    ) -> Result<(), BuilderError> {
         let field_type = self.module_builder.get_type_by_id_or_add_it::<T>()?;
         if let Some(ty) = field_type.get_data() {
             self.fields.push(StructField {
                 name: name.clone(),
                 ty,
+                alignment: T::ALIGN_TO,
+                width: T::WIDTH,
             });
             self.field_map.push(Some(self.field_index));
             self.field_index += 1;
@@ -117,18 +118,17 @@ impl<'a> StructBuilder<'a> {
     pub fn build<T: ShaderType>(self) -> TypeHandle {
         let mut offset = 0;
 
-        let members = self
-            .fields
-            .into_iter()
-            .map(|field| {
-                StructMember {
-                    name: field.name.clone(),
-                    ty: field.ty,
-                    binding: None,
-                    offset: 0, // todo
-                }
-            })
-            .collect::<Vec<_>>();
+        let mut members = Vec::with_capacity(self.fields.len());
+        for field in self.fields {
+            offset = align_to(offset, field.alignment);
+            members.push(StructMember {
+                name: field.name.clone(),
+                ty: field.ty,
+                binding: None,
+                offset,
+            });
+            offset += field.width;
+        }
 
         let handle = if members.is_empty() {
             self.module_builder.add_empty_type::<T>()
@@ -142,7 +142,7 @@ impl<'a> StructBuilder<'a> {
                 Some(self.name),
                 naga::TypeInner::Struct {
                     members,
-                    span: 0, // todo
+                    span: offset,
                 },
             )
         };
@@ -151,11 +151,19 @@ impl<'a> StructBuilder<'a> {
     }
 }
 
+fn align_to(mut address: u32, alignment: u32) -> u32 {
+    let unaligned_by = address % alignment;
+    if unaligned_by > 0 {
+        address += alignment - unaligned_by;
+    }
+    address
+}
+
 /// todo: how do we know the address space?
 pub fn access_struct_field<T: ShaderType, U: ShaderType>(
     block_builder: &mut BlockBuilder,
     base: ExpressionHandle<T>,
-    index: usize,
+    index: u32,
 ) -> Result<DeferredDereference<U, address_space::Private>, BuilderError> {
     let field_map = block_builder
         .function_builder
@@ -168,7 +176,7 @@ pub fn access_struct_field<T: ShaderType, U: ShaderType>(
     let handle = match (field_map, base) {
         (Some(field_map), Some(base)) => {
             field_map
-                .get(index)
+                .get(index as usize)
                 .expect("field index out of bounds")
                 .map(|index| {
                     block_builder

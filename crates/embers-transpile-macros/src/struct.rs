@@ -38,10 +38,15 @@ pub fn process_struct(
     let mut struct_fields = TokenBuffer::default();
     let mut compose_field_exprs = TokenBuffer::default();
     let mut shader_type_bounds = generics.clone();
+    let mut width_bounds = generics.clone();
+    let mut width_const = TokenBuffer::default();
+    //let mut align_to = None;
     let mut output = TokenBuffer::default();
-    let mut num_fields = 0;
+    let mut num_fields = 0usize;
 
-    let mut field_access_impl = |ident: &Ident, ty: &Type, i: usize, name: Option<Literal>| {
+    width_const.push(quote! { 0u32 });
+
+    let mut field_access_impl = |ident: &Ident, ty: &Type, i: u32, name: Option<Literal>| {
         let access_impl = quote! {
             type Type = ::embers_transpile::__private::Pointer<#ty, ::embers_transpile::__private::address_space::Private>;
             type Result = ::embers_transpile::__private::DeferredDereference<#ty, ::embers_transpile::__private::address_space::Private>;
@@ -97,14 +102,53 @@ pub fn process_struct(
             ::embers_transpile::__private::AsExpression::as_expression(&self.#name, &mut block_builder)?.get_handle(),
         });
 
-        // add trait bound to field type
+        // add trait bound to field type for ShaderType impl
         let where_clause = shader_type_bounds.make_where_clause();
         where_clause.predicates.push(
             syn::parse2(quote! {
-                #ty: embers_transpile::__private::ShaderType
+                #ty: embers_transpile::__private::ShaderType + embers_transpile::__private::Width + embers_transpile::__private::AlignTo
             })
             .unwrap(),
         );
+
+        // add expression to const width and bounds for Width trait
+        width_const.push(quote! {
+            + <#ty as ::embers_transpile::__private::Width>::WIDTH
+        });
+        let where_clause = width_bounds.make_where_clause();
+        where_clause.predicates.push(
+            syn::parse2(quote! {
+                #ty: ::embers_transpile::__private::Width
+            })
+            .unwrap(),
+        );
+
+        // impl for AlignTo
+        /*if align_to.is_none() {
+            let mut generics = generics.clone();
+            let where_clause = compose_impl_generics.make_where_clause();
+            where_clause.predicates.push(
+                syn::parse2(quote! {
+                    #ty: embers_transpile::__private::AlignTo
+                })
+                .unwrap(),
+            );
+            where_clause.predicates.push(
+                syn::parse2(quote! {
+                    Self: embers_transpile::__private::Width
+                })
+                .unwrap(),
+            );
+            let (impl_generics, ty_generics, where_clause) = compose_impl_generics.split_for_impl();
+            align_to = Some(quote!{
+                impl #impl_generics ::embers_transpile::__private::AlignTo for #ident #ty_generics #where_clause {
+                    const ALIGN_TO: u32 = ::embers_transpile::__private::struct_alignment(
+                        <#ty as ::embers_transpile::__private::AlignTo>::ALIGN_TO,
+                        <Self as Width>::WIDTH,
+                    );
+                }
+            });
+        }*/
 
         num_fields += 1;
     };
@@ -123,7 +167,7 @@ pub fn process_struct(
                     quote! { struct_builder.add_named_field::<#field_type>(#field_name_literal)?; },
                 );
 
-                field_access_impl(ident, field_type, i, Some(field_name_literal));
+                field_access_impl(ident, field_type, i as u32, Some(field_name_literal));
             }
         }
         Fields::Unnamed(unnamed) => {
@@ -137,7 +181,7 @@ pub fn process_struct(
                     struct_builder.add_unnamed_field::<#field_type>()?;
                 });
 
-                field_access_impl(ident, field_type, i, None);
+                field_access_impl(ident, field_type, i as u32, None);
             }
         }
     }
@@ -202,6 +246,13 @@ pub fn process_struct(
                 #add_to_module
                 ::embers_transpile::__private::Ok(struct_builder.build::<Self>())
             }
+        }
+    });
+
+    let (impl_generics, ty_generics, where_clause) = width_bounds.split_for_impl();
+    output.push(quote!{
+        impl #impl_generics ::embers_transpile::__private::Width for #ident #ty_generics #where_clause {
+            const WIDTH: ::embers_transpile::__private::std::primitive::u32 = #width_const;
         }
     });
 

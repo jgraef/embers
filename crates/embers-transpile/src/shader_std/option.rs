@@ -1,12 +1,6 @@
 use embers_transpile_macros::transpile;
 
-use crate::{
-    shader_std::{
-        default::Default,
-        types::primitive::bool,
-    },
-    ShaderType,
-};
+use crate::shader_std::types::primitive::bool;
 
 #[transpile]
 struct Option<T> {

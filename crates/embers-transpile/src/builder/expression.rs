@@ -14,7 +14,6 @@ use naga::{
 use super::{
     block::BlockBuilder,
     error::BuilderError,
-    function::FunctionBuilder,
 };
 
 #[derive(Debug)]

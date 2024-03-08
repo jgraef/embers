@@ -4,6 +4,7 @@ use crate::builder::{
     error::BuilderError,
     module::ModuleBuilder,
     r#type::{
+        AlignTo,
         ShaderType,
         TypeHandle,
         Width,
@@ -21,7 +22,11 @@ impl<T: 'static> ShaderType for PhantomData<T> {
 }
 
 impl<T> Width for PhantomData<T> {
-    const WIDTH: usize = 0;
+    const WIDTH: u32 = 0;
+}
+
+impl<T> AlignTo for PhantomData<T> {
+    const ALIGN_TO: u32 = 1;
 }
 
 #[transpile]

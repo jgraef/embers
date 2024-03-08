@@ -17,7 +17,6 @@ use naga::{
     Handle,
     LocalVariable,
     ShaderStage,
-    Statement,
 };
 
 use super::{
@@ -29,9 +28,7 @@ use super::{
     },
     module::ModuleBuilder,
     pointer::{
-        address_space,
         AddressSpace,
-        AsPointer,
         Pointer,
     },
     r#type::{

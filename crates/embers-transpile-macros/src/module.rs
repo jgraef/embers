@@ -60,7 +60,7 @@ pub fn process_module(
 
     if !args.no_std {
         output.push(quote! {
-            use ::embers_transpile::shader_std as std;
+            use ::embers_transpile::shader_std as shader_std;
         });
     }
 

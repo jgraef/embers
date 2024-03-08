@@ -1,9 +1,12 @@
+use std::primitive::u32 as std_u32;
+
 use crate::{
     builder::{
         error::BuilderError,
         module::ModuleBuilder,
         r#type::{
             scalar_to_naga,
+            AlignTo,
             ScalarKind,
             ShaderType,
             TypeHandle,
@@ -26,7 +29,11 @@ macro_rules! impl_primitive {
         }
 
         impl Width for $ty {
-            const WIDTH: usize = $width;
+            const WIDTH: std_u32 = $width;
+        }
+
+        impl AlignTo for $ty {
+            const ALIGN_TO: std_u32 = $width; // is this always just the width of the primitive?
         }
 
         impl ShaderType for $ty {

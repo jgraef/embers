@@ -8,7 +8,6 @@ use crate::{
         block::BlockBuilder,
         error::BuilderError,
         expression::ExpressionHandle,
-        function::FunctionBuilder,
         module::ModuleBuilder,
         r#struct::{
             FieldAccess,
@@ -17,6 +16,7 @@ use crate::{
         },
         r#type::{
             scalar_to_naga,
+            AlignTo,
             ScalarKind,
             TypeHandle,
             Width,
@@ -29,8 +29,11 @@ use crate::{
     ShaderType,
 };
 
+// todo: make sure we restrict useful instantiations of vec and mat for types
+// that wgsl supports. todo: read https://gist.github.com/teoxoy/936891c16c2a3d1c3c5e7204ac6cd76c#2-wgsl and make sure WIDTH and ALIGN_TO is correct.
+
 #[allow(non_camel_case_types)]
-pub struct vec<T, const N: usize> {
+pub struct vec<T, const N: u32> {
     _ty: PhantomData<T>,
 }
 
@@ -62,11 +65,19 @@ impl_vec_n!(2, vec2, Bi);
 impl_vec_n!(3, vec3, Tri);
 impl_vec_n!(4, vec4, Quad);
 
-impl<T: Width, const N: usize> Width for vec<T, N> {
-    const WIDTH: usize = <T as Width>::WIDTH * N;
+impl<T: Width, const N: u32> Width for vec<T, N> {
+    const WIDTH: u32 = <T as Width>::WIDTH * N;
 }
 
-impl<T, const N: usize, const I: usize> FieldAccess<UnnamedFieldAccessor<I>> for vec<T, N>
+impl<T, const N: u32> AlignTo for vec<T, N>
+where
+    Self: Width,
+{
+    // see https://sotrh.github.io/learn-wgpu/showcase/alignment/#alignment-of-vertex-and-index-buffers
+    const ALIGN_TO: u32 = <Self as Width>::WIDTH.next_power_of_two();
+}
+
+impl<T, const N: u32, const I: u32> FieldAccess<UnnamedFieldAccessor<I>> for vec<T, N>
 where
     Assert<{ I < N }>: IsTrue,
 {
@@ -95,7 +106,7 @@ where
 
 macro_rules! vec_named_field_access {
     ($i:expr, $name:ident) => {
-        impl<T, const N: usize> FieldAccess<NamedFieldAccessor<{ stringify!($name) }>> for vec<T, N>
+        impl<T, const N: u32> FieldAccess<NamedFieldAccessor<{ stringify!($name) }>> for vec<T, N>
         where
             Assert<{ $i < N }>: IsTrue,
         {
@@ -118,7 +129,7 @@ vec_named_field_access!(2, z);
 vec_named_field_access!(3, w);
 
 #[transpile]
-impl<T: crate::shader_std::default::Default, const N: usize> crate::shader_std::default::Default
+impl<T: crate::shader_std::default::Default, const N: u32> crate::shader_std::default::Default
     for vec<T, N>
 where
     Self: ShaderType,
@@ -132,7 +143,7 @@ where
 }
 
 #[allow(non_camel_case_types)]
-pub struct mat<T, const N: usize, const M: usize> {
+pub struct mat<T, const N: u32, const M: u32> {
     _ty: PhantomData<T>,
 }
 
@@ -168,12 +179,12 @@ impl_mat_n_m!(4, 2, mat4x2, Quad, Bi);
 impl_mat_n_m!(4, 3, mat4x3, Quad, Tri);
 impl_mat_n_m!(4, 4, mat4x4, Quad, Quad);
 
-impl<T: Width, const N: usize, const M: usize> Width for mat<T, N, M> {
-    const WIDTH: usize = <T as Width>::WIDTH * N;
+impl<T: Width, const N: u32, const M: u32> Width for mat<T, N, M> {
+    const WIDTH: u32 = <T as Width>::WIDTH * N;
 }
 
 #[transpile]
-impl<T: crate::shader_std::default::Default, const N: usize, const M: usize>
+impl<T: crate::shader_std::default::Default, const N: u32, const M: u32>
     crate::shader_std::default::Default for mat<T, N, M>
 where
     Self: ShaderType,

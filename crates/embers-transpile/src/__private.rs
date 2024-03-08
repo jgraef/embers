@@ -62,8 +62,10 @@ pub use crate::{
             UnnamedFieldAccessor,
         },
         r#type::{
+            AlignTo,
             ShaderType,
             TypeHandle,
+            Width,
         },
         variable::{
             GlobalVariable,

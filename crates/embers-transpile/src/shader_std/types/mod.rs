@@ -10,6 +10,7 @@ use crate::{
         error::BuilderError,
         module::ModuleBuilder,
         r#type::{
+            AlignTo,
             TypeHandle,
             Width,
         },
@@ -28,7 +29,11 @@ impl ShaderType for Unit {
 }
 
 impl Width for Unit {
-    const WIDTH: usize = 0;
+    const WIDTH: u32 = 0;
+}
+
+impl AlignTo for Unit {
+    const ALIGN_TO: u32 = 1;
 }
 
 #[transpile]

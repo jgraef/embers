@@ -122,7 +122,7 @@ fn to_wgsl(module: &naga::Module) -> Result<String, Error> {
 
 #[transpile]
 mod shader {
-    use std::ops::Add;
+    use shader_std::ops::Add;
 
     //fn index_range(global_id: vec3<u32>, num_workgroups: vec3<u32>) -> vec2<u32>
     // {    // todo: use all 3 workgroup dimensions.

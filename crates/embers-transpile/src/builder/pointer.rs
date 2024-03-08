@@ -1,7 +1,4 @@
-use std::{
-    marker::PhantomData,
-    ops::Add,
-};
+use std::marker::PhantomData;
 
 use naga::{
     Expression,
@@ -145,7 +142,7 @@ impl<T: ShaderType, A: AddressSpace> ExpressionHandle<Pointer<T, A>> {
         block_builder: &mut BlockBuilder,
     ) -> Result<(), BuilderError> {
         if let Some(handle) = self.get_handle() {
-            block_builder.add_emit(value);
+            block_builder.add_emit(value)?;
             let value = value.try_get_handle()?;
             block_builder.add_statement(Statement::Store {
                 pointer: handle,

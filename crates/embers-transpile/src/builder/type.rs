@@ -1,5 +1,4 @@
 use naga::{
-    Expression,
     Function,
     Handle,
     Type,
@@ -7,8 +6,6 @@ use naga::{
 
 use super::{
     error::BuilderError,
-    expression::ExpressionHandle,
-    function::FunctionBuilder,
     module::ModuleBuilder,
 };
 
@@ -17,7 +14,11 @@ pub trait ShaderType: 'static {
 }
 
 pub trait Width {
-    const WIDTH: usize;
+    const WIDTH: u32;
+}
+
+pub trait AlignTo {
+    const ALIGN_TO: u32;
 }
 
 pub trait ScalarKind {

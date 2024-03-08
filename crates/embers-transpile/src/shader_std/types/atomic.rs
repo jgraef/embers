@@ -6,6 +6,7 @@ use crate::{
         module::ModuleBuilder,
         r#type::{
             scalar_to_naga,
+            AlignTo,
             ScalarKind,
             TypeHandle,
             Width,
@@ -26,5 +27,9 @@ impl<T: ScalarKind + Width + 'static> ShaderType for Atomic<T> {
 }
 
 impl<T: Width> Width for Atomic<T> {
-    const WIDTH: usize = <T as Width>::WIDTH;
+    const WIDTH: u32 = <T as Width>::WIDTH;
+}
+
+impl<T: AlignTo> AlignTo for Atomic<T> {
+    const ALIGN_TO: u32 = T::ALIGN_TO;
 }

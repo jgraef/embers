@@ -9,7 +9,6 @@ use crate::builder::{
         AsExpression,
         ExpressionHandle,
     },
-    function::FunctionBuilder,
 };
 
 #[derive(Clone, Copy, Debug)]
