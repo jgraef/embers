@@ -126,13 +126,8 @@ impl<'a> StructBuilder<'a> {
                 .struct_fields
                 .insert(TypeId::of::<T>(), self.field_map);
 
-            self.module_builder.add_naga_type::<T>(
-                Some(self.name),
-                naga::TypeInner::Struct {
-                    members,
-                    span,
-                },
-            )
+            self.module_builder
+                .add_naga_type::<T>(Some(self.name), naga::TypeInner::Struct { members, span })
         };
 
         handle
@@ -147,10 +142,13 @@ pub(super) fn align_to(mut address: u32, alignment: u32) -> u32 {
     address
 }
 
-pub(super) fn layout_struct_members(fields: impl IntoIterator<Item = StructField>) -> (Vec<StructMember>, u32) {
+pub(super) fn layout_struct_members(
+    fields: impl IntoIterator<Item = StructField>,
+) -> (Vec<StructMember>, u32) {
     let mut offset = 0;
 
-    let members = fields.into_iter()
+    let members = fields
+        .into_iter()
         .map(|field| {
             offset = align_to(offset, field.alignment);
             let member = StructMember {

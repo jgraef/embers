@@ -1,46 +1,67 @@
-use std::marker::PhantomData;
+use std::{
+    marker::PhantomData,
+    process::Output,
+};
 
-use naga::{Expression, Handle, Type};
-
-use crate::__private::ExpressionHandle;
+use naga::{
+    Expression,
+    Handle,
+    Type,
+};
 
 use super::{
     block::BlockBuilder,
     error::BuilderError,
     function::{
-        Captures, FunctionBuilder, GenerateFunction
+        Captures,
+        FunctionBuilder,
+        FunctionTrait,
+        GenerateFunction,
     },
     r#type::TypeHandle,
 };
+use crate::__private::ExpressionHandle;
 
-
-pub struct ClosureFoo<Args, Result, Body> {
-    _args: PhantomData<Args>,
-    _result: PhantomData<Result>,
+struct Closure<Body, Args, Output> {
+    /// the type depends on Body so that it's unique, even if Args and Output
+    /// are the same as another closures'
     _body: PhantomData<Body>,
+    _args: PhantomData<Args>,
+    _output: PhantomData<Output>,
 }
 
-
-pub trait FunctionTrait<Args, Return>: 'static {
-
+trait FunctionArguments {
+    fn as_raw_expression_handles(&self) -> Vec<Handle<Expression>>;
 }
 
+impl<Body, Args: FunctionArguments, Output> FunctionTrait<Args> for Closure<Body, Args, Output> {
+    type Output = Output;
 
+    fn call(
+        func: ExpressionHandle<Self>,
+        args: Args,
+        block_builder: &mut BlockBuilder,
+    ) -> Result<ExpressionHandle<Self::Output>, BuilderError> {
+        todo!()
+    }
+}
+
+/*
 pub(super) fn create_closure<
-    Closure: FunctionTrait<Args, Return>,
-    Args: 'static,
-    Return: 'static,
     Body: Fn(&mut FunctionBuilder) -> Result<(), BuilderError> + 'static,
-    //Call: Fn(&mut BlockBuilder, ExpressionHandle<Closure>) + 'static,   
->(block_builder: &mut BlockBuilder, body: Body) -> Result<ExpressionHandle<Closure>, BuilderError> {
+    Args,
+    Output,
+>(block_builder: &mut BlockBuilder, body: Body) -> Result<ExpressionHandle<impl FunctionTrait<Args, Output = Output>>, BuilderError> {
+
+
     let (_ty, captures) = block_builder
         .function_builder
         .module_builder
-        .create_closure::<Closure, _>(&ClosureBodyGenerator { body })?;
+        .create_closure::<Closure<Body, Args, Output>, _>(&ClosureBodyGenerator { body })?;
 
     // compose expression for captures struct
     let expr = if let Some(captures) = captures {
-        block_builder.function_builder.add_expression(Expression::Compose {
+        block_builder.function_builder.add_expression::<Closure<Body, Args, Output>>(Expression::Compose {
             ty: captures.ty,
             components: captures.values,
         })?
@@ -51,6 +72,7 @@ pub(super) fn create_closure<
 
     Ok(expr)
 }
+ */
 
 pub struct ClosureBodyGenerator<B> {
     body: B,

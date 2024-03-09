@@ -16,7 +16,9 @@ use naga::{
 use super::{
     error::BuilderError,
     function::{
-        Captures, FunctionBuilder, GenerateFunction
+        Captures,
+        FunctionBuilder,
+        GenerateFunction,
     },
     pointer::AddressSpace,
     r#struct::StructBuilder,

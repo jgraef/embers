@@ -1,7 +1,11 @@
 use std::{
-    any::{type_name, TypeId},
+    any::{
+        type_name,
+        TypeId,
+    },
     collections::HashMap,
-    marker::PhantomData, thread::Builder,
+    marker::PhantomData,
+    thread::Builder,
 };
 
 use naga::{
@@ -16,24 +20,64 @@ use naga::{
     FunctionResult,
     Handle,
     LocalVariable,
-    ShaderStage, Type, TypeInner,
+    ShaderStage,
+    Type,
+    TypeInner,
 };
 
 use super::{
-    block::BlockBuilder, error::BuilderError, expression::{
+    block::BlockBuilder,
+    error::BuilderError,
+    expression::{
         AsExpression,
         ExpressionHandle,
-    }, module::ModuleBuilder, pointer::{
+    },
+    module::ModuleBuilder,
+    pointer::{
         AddressSpace,
         Pointer,
-    }, r#struct::{align_to, layout_struct_members, StructField}, r#type::{
-        AlignTo, ShaderType, TypeHandle, Width
-    }, variable::{
+    },
+    r#struct::{
+        align_to,
+        layout_struct_members,
+        StructField,
+    },
+    r#type::{
+        AlignTo,
+        ShaderType,
+        TypeHandle,
+        Width,
+    },
+    variable::{
         LetMutBinding,
         ScopeId,
-    }
+    },
 };
 use crate::utils::try_all;
+
+pub trait FunctionTrait<Args> {
+    type Output;
+
+    fn call(
+        func: ExpressionHandle<Self>,
+        args: Args,
+        block_builder: &mut BlockBuilder,
+    ) -> Result<ExpressionHandle<Self::Output>, BuilderError>;
+}
+
+impl<A, B, F: Fn(ExpressionHandle<A>, ExpressionHandle<B>) -> G, G: GenerateCall>
+    FunctionTrait<(ExpressionHandle<A>, ExpressionHandle<B>)> for F
+{
+    type Output = G::Return;
+
+    fn call(
+        func: ExpressionHandle<Self>,
+        args: (ExpressionHandle<A>, ExpressionHandle<B>),
+        block_builder: &mut BlockBuilder,
+    ) -> Result<ExpressionHandle<Self::Output>, BuilderError> {
+        todo!()
+    }
+}
 
 pub trait GenerateFunction: 'static {
     fn generate(&self, function_builder: &mut FunctionBuilder) -> Result<(), BuilderError>;
@@ -432,22 +476,16 @@ impl<'m> FunctionBuilder<'m> {
         if let Some(captures_builder) = self.captures {
             if let Some(input) = captures_builder.input {
                 let arg_index = self.inputs.len();
-                            
+
                 let (members, span) = layout_struct_members(captures_builder.fields);
-        
-                let ty = self
-                    .module_builder
-                    .types
-                    .insert(
-                        naga::Type {
-                            name: self.name.clone(),
-                            inner: TypeInner::Struct {
-                                members,
-                                span,
-                            }
-                        },
-                        naga::Span::default(),
-                    );
+
+                let ty = self.module_builder.types.insert(
+                    naga::Type {
+                        name: self.name.clone(),
+                        inner: TypeInner::Struct { members, span },
+                    },
+                    naga::Span::default(),
+                );
 
                 self.inputs.push(FunctionArgument {
                     name: Some("captures".to_owned()),
@@ -599,13 +637,22 @@ impl<'m> FunctionBuilder<'m> {
         )
     }
 
-    pub fn capture<T: ShaderType + Width + AlignTo>(&mut self, scope: ScopeId, expression: ExpressionHandle<T>) -> Result<ExpressionHandle<T>, BuilderError> {
+    pub fn capture<T: ShaderType + Width + AlignTo>(
+        &mut self,
+        scope: ScopeId,
+        expression: ExpressionHandle<T>,
+    ) -> Result<ExpressionHandle<T>, BuilderError> {
         let expression = if scope == self.scope {
-            // we don't actually capture it because the variable is in this function's scope.
+            // we don't actually capture it because the variable is in this function's
+            // scope.
             expression
         }
         else {
-            let captures = self.captures.as_mut().ok_or_else(|| BuilderError::FunctionCantCapture { name: self.name.clone() })?;
+            let captures = self.captures.as_mut().ok_or_else(|| {
+                BuilderError::FunctionCantCapture {
+                    name: self.name.clone(),
+                }
+            })?;
 
             if let Some(handle) = expression.get_handle() {
                 // map outer expression to inner expression
@@ -616,13 +663,17 @@ impl<'m> FunctionBuilder<'m> {
                     // the inner expression will be field access into a generated struct
                     let input = captures.input.get_or_insert_with(|| {
                         // placeholder
-                        self.expressions.append(Expression::FunctionArgument(0), Default::default())
+                        self.expressions
+                            .append(Expression::FunctionArgument(0), Default::default())
                     });
 
                     let field_index = captures.fields.len();
                     captures.fields.push(StructField {
                         name: None,
-                        ty: self.module_builder.get_type_by_id_or_add_it::<T>()?.try_get_data()?,
+                        ty: self
+                            .module_builder
+                            .get_type_by_id_or_add_it::<T>()?
+                            .try_get_data()?,
                         alignment: <T as AlignTo>::ALIGN_TO,
                         width: <T as Width>::WIDTH,
                     });
@@ -630,8 +681,11 @@ impl<'m> FunctionBuilder<'m> {
                     captures.field_values.push(handle);
 
                     let out_handle = self.expressions.append(
-                        Expression::AccessIndex { base: *input, index: field_index as _ },
-                        Default::default()
+                        Expression::AccessIndex {
+                            base: *input,
+                            index: field_index as _,
+                        },
+                        Default::default(),
                     );
 
                     captures.expressions.insert(handle, out_handle);
@@ -659,7 +713,8 @@ struct CapturesBuilder {
 
     field_values: Vec<Handle<Expression>>,
 
-    /// maps outer expressions to inner expressions (access into captures struct)
+    /// maps outer expressions to inner expressions (access into captures
+    /// struct)
     expressions: HashMap<Handle<Expression>, Handle<Expression>>,
 }
 

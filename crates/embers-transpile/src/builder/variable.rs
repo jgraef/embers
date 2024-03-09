@@ -46,7 +46,10 @@ impl<T> LetBinding<T> {
     }
 
     pub fn from_expr(expr: ExpressionHandle<T>, scope: ScopeId) -> Self {
-        Self { value: Some(expr), scope }
+        Self {
+            value: Some(expr),
+            scope,
+        }
     }
 }
 

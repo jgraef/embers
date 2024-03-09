@@ -43,5 +43,17 @@ pub fn process_closure(
 ) -> Result<ExprOut, Error> {
     let attributes = ClosureMeta::parse(&closure.attrs)?;
 
+    let type_ident = name_gen.tmp_var("closure");
+
+    /*output.push(quote!{
+        {
+            struct #ident;
+
+            pub trait Fn<Args>: FnMut<Args> {
+                extern "rust-call" fn call(&self, args: Args) -> Self::Output;
+            }
+        }
+    });*/
+
     todo!();
 }
