@@ -1,14 +1,17 @@
 use embers_transpile_macros::transpile;
 
-use crate::builder::{
-    error::BuilderError,
-    module::ModuleBuilder,
-    r#type::{
-        AlignTo,
-        ShaderType,
-        TypeHandle,
-        Width,
+use crate::{
+    builder::{
+        error::BuilderError,
+        module::ModuleBuilder,
+        r#type::{
+            AlignTo,
+            ShaderType,
+            TypeHandle,
+            Width,
+        },
     },
+    utils::sealed::Sealed,
 };
 
 pub struct PhantomData<T> {
@@ -37,3 +40,6 @@ impl<T: 'static> crate::shader_std::default::Default for PhantomData<T> {
         }
     }
 }
+
+pub trait TupleOfExpressionHandles: Sealed {}
+//embers_transpile_macros::impl_tuple_of_expression_handles!(8);

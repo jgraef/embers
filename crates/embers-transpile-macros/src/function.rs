@@ -1,9 +1,14 @@
+use std::sync::mpsc::Receiver;
+
 use darling::{
     ast::NestedMeta,
     FromAttributes,
     FromMeta,
 };
-use proc_macro2::TokenStream;
+use proc_macro2::{
+    Span,
+    TokenStream,
+};
 use quote::{
     quote,
     ToTokens,
@@ -68,7 +73,7 @@ impl FnMeta {
 }
 
 #[derive(Debug, FromMeta)]
-enum BuiltinType {
+pub enum BuiltinType {
     Position { invariant: bool },
     ViewIndex,
     BaseInstance,
@@ -181,6 +186,42 @@ pub enum AddressSpace {
     PushConstant,
 }
 
+impl ToTokens for AddressSpace {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let out = match self {
+            AddressSpace::Function => {
+                quote! { ::embers_transpile::__private::address_space::Function }
+            }
+            AddressSpace::Private => {
+                quote! { ::embers_transpile::__private::address_space::Private }
+            }
+            AddressSpace::WorkGroup => {
+                quote! { ::embers_transpile::__private::address_space::WorkGroup }
+            }
+            AddressSpace::Uniform => {
+                quote! { ::embers_transpile::__private::address_space::Uniform }
+            }
+            AddressSpace::Storage(access) => {
+                match access {
+                    StorageAccess::Read => {
+                        quote! { ::embers_transpile::__private::address_space::StorageRead }
+                    }
+                    StorageAccess::Write => {
+                        quote! { ::embers_transpile::__private::address_space::StorageReadWrite }
+                    }
+                }
+            }
+            AddressSpace::Handle => {
+                quote! { ::embers_transpile::__private::AddressSpace::Handle }
+            }
+            AddressSpace::PushConstant => {
+                quote! { ::embers_transpile::__private::AddressSpace::PushConstant }
+            }
+        };
+        tokens.extend(out);
+    }
+}
+
 impl Default for AddressSpace {
     fn default() -> Self {
         Self::Private
@@ -196,7 +237,7 @@ pub struct GlobalMeta {
 }
 
 #[derive(Debug, FromMeta)]
-enum EntryPointArgMeta {
+pub enum EntryPointArgMeta {
     Builtin(BuiltinType),
     Global(GlobalMeta),
 }
@@ -208,161 +249,368 @@ struct EntrypointArgAttributes {
     meta: EntryPointArgMeta,
 }
 
-pub fn process_entrypoint(input: &ItemFn, _args: &FnMeta) -> Result<TokenStream, Error> {
-    let vis = &input.vis;
-    let sig = &input.sig;
-    let generics = &sig.generics;
-    let block = &input.block;
-    let ident = &input.sig.ident;
-    let ret = quote! { ::embers_transpile::__private::Unit };
-
-    let body = generate_function_body(sig, ret, block, true)?;
-
-    let generated = quote! {
-        #vis fn #ident #generics () -> ::embers_transpile::__private::Result<::embers_transpile::__private::Module, ::embers_transpile::__private::BuilderError> {
-            let mut module_builder = ::embers_transpile::__private::ModuleBuilder::default();
-            module_builder.add_entrypoint(
-                ::embers_transpile::__private::EntrypointGenerator::new(
-                    |mut _function_builder: &mut ::embers_transpile::__private::FunctionBuilder| {
-                        #body
-                    },
-                )
-            )?;
-            let module = module_builder.build();
-            Ok(module)
-        }
-    };
-
-    Ok(generated)
-}
-
 pub fn process_bare_function(
     input: &ItemFn,
     attributes: Option<&[NestedMeta]>,
+    name_gen: &mut NameGen,
 ) -> Result<TokenStream, Error> {
     let args = FnMeta::parse(attributes, &input.attrs)?;
-    if args.entrypoint {
-        assert!(!args.inline);
-        process_entrypoint(input, &args)
-    }
-    else {
-        process_function(&input.vis, &input.sig, &input.block, &args)
-    }
+    process_function(&input.vis, &input.sig, &input.block, &args, name_gen)
 }
 
 pub fn process_impl_function(
     input: &ImplItemFn,
     attributes: Option<&[NestedMeta]>,
+    name_gen: &mut NameGen,
 ) -> Result<TokenStream, Error> {
     let args = FnMeta::parse(attributes, &input.attrs)?;
-    process_function(&input.vis, &input.sig, &input.block, &args)
+    process_function(&input.vis, &input.sig, &input.block, &args, name_gen)
 }
 
 fn process_function(
     vis: &Visibility,
     sig: &Signature,
     block: &Block,
-    args: &FnMeta,
+    attrs: &FnMeta,
+    name_gen: &mut NameGen,
 ) -> Result<TokenStream, Error> {
-    let (sig_transformed, ret, has_receiver) = transform_signature_to_generator(sig);
+    let SignatureTransform {
+        new_sig,
+        inputs,
+        output_type,
+        ident,
+        ..
+    } = SignatureTransform::new(sig, name_gen, attrs.entrypoint)?;
 
-    let unpack_receiver = if has_receiver {
-        quote! { let _self = self.unpack(); }
-    }
-    else {
-        quote! {}
-    };
+    let func_name_lit = ident_to_literal(&ident);
 
-    let generated = if args.inline {
-        let body = generate_function_body_inline(ret, block)?;
-        quote! {
-            #vis #sig_transformed {
-                #unpack_receiver
-                ::embers_transpile::__private::InlineCallGenerator::new(
-                    move |mut _block_builder: &mut ::embers_transpile::__private::BlockBuilder| {
-                        #body
-                    },
-                )
-            }
+    let mut entrypoint_create_args = TokenBuffer::default();
+    let mut entrypoint_add_globals = TokenBuffer::default();
+    let mut collect_args = TokenBuffer::default();
+    let mut bind_args = TokenBuffer::default();
+    let mut args_as_expression_handles = TokenBuffer::default();
+    let mut arg_index: usize = 0;
+    let mut rebind_self = None;
+
+    for input in &inputs {
+        let name_expr = input.name_expression();
+        let name = input.ident();
+        let ty = input.ty();
+        let mut global_meta = None;
+        let mut binding_expr = None;
+
+        if let Input::Receiver { .. } = input {
+            rebind_self = Some(quote! {
+                let #name = self.into_argument();
+            });
         }
-    }
-    else {
-        let body = generate_function_body(sig, ret, block, false)?;
-        let call = generate_function_call(sig)?;
 
-        quote! {
-            #vis #sig_transformed {
-                #unpack_receiver
-                ::embers_transpile::__private::CallGenerator::new(
-                    move |mut _function_builder: &mut ::embers_transpile::__private::FunctionBuilder| {
-                        #body
-                    },
-                    move |
-                        mut _block_builder: &mut ::embers_transpile::__private::BlockBuilder,
-                        _func_handle: ::embers_transpile::__private::TypeHandle,
-                    | {
-                        #call
-                    },
-                )
+        match input.entry_point_attrs() {
+            Some(EntryPointArgMeta::Global(global)) => {
+                global_meta = Some(global);
             }
+            Some(EntryPointArgMeta::Builtin(builtin)) => {
+                binding_expr = Some(quote! {
+                    ::embers_transpile::__private::naga::Binding::BuiltIn(#builtin)
+                });
+            }
+            None => {}
         }
-    };
 
-    Ok(generated)
-}
+        if attrs.entrypoint {
+            // we don't actually have an function argument, so we just make one
 
-pub fn transform_signature_to_generator(sig: &Signature) -> (TokenStream, TokenStream, bool) {
-    let mut has_receiver = false;
-    let mut inputs = vec![];
+            // fixme: if it's a global it might be a pointer type
+            entrypoint_create_args.push(quote! {
+                let #name = ::embers_transpile::__private::Argument::<#ty>::new();
+            });
+        }
 
-    let ident = &sig.ident;
+        // generates an expression with type (ExpressionHandle<Arg1>,
+        // ExpressionHandle<Arg2>, ...)
+        args_as_expression_handles.push(quote! {
+            #name.as_empty_expression_handle(),
+        });
 
-    for input in &sig.inputs {
-        match input {
-            FnArg::Receiver(receiver) => {
-                assert!(!has_receiver);
-                has_receiver = true;
+        if let Some(global) = global_meta {
+            if !input.is_wild() {
+                let global_ident = name_gen.tmp_var("global");
 
-                //let ty = &receiver.ty;
-                let ty = if receiver.reference.is_some() {
-                    // todo: what address space?
-                    quote! { ::embers_transpile::__private::PhantomReceiverPointer<Self, impl ::embers_transpile::__private::AddressSpace> }
+                let binding_expr = if let Some(binding) = global.binding {
+                    let group = global.group.unwrap_or_default();
+                    quote! {
+                        ::embers_transpile::__private::Some(::embers_transpile::__private::naga::ResourceBinding {
+                            group: #group,
+                            binding: #binding,
+                        })
+                    }
                 }
                 else {
-                    quote! { ::embers_transpile::__private::PhantomReceiver<Self> }
+                    quote! { ::embers_transpile::__private::None }
                 };
 
-                inputs.push(quote! { self: #ty });
-            }
-            FnArg::Typed(pat_type) => {
-                let pat = &pat_type.pat;
-                let mut ty = pat_type.ty.clone();
-                map_types(&mut ty, TypePosition::Argument);
+                let address_space = &global.address_space;
 
-                // todo: accept impl AsExpressionHandle
-                inputs.push(quote! { #pat: ::embers_transpile::__private::ExpressionHandle<#ty> });
+                entrypoint_add_globals.push(quote!{
+                    let #global_ident = module_builder.get_global_variable_or_add_it::<#ty, #address_space>(
+                        #name_expr.expect("global variables must be named"),
+                        #binding_expr,
+                    )?;
+                });
+
+                bind_args.push(quote!{
+                    let #name = ::embers_transpile::__private::ExpressionHandle::from_global_arg(#name, #global_ident, _block_builder)?;
+                });
             }
+        }
+        else {
+            let binding_expr = binding_expr
+                .map(|expr| {
+                    quote! {
+                        ::embers_transpile::__private::Some(#expr)
+                    }
+                })
+                .unwrap_or_else(|| quote! {::embers_transpile::__private::None});
+
+            collect_args.push(quote! {
+                _args.push(_function_builder.add_input(#name_expr, #name, false, #binding_expr)?.as_dyn());
+            });
+
+            bind_args.push(quote!{
+                let #name = ::embers_transpile::__private::ExpressionHandle::from_arg(#name, _args[#arg_index], _block_builder)?;
+            });
+
+            arg_index += 1;
         }
     }
 
-    let ret = match &sig.output {
-        ReturnType::Default => quote! { ::embers_transpile::__private::Unit },
-        ReturnType::Type(_, ty) => {
-            let mut ty = ty.clone();
-            map_types(&mut ty, TypePosition::Argument);
-            quote! { #ty }
+    let create_function = quote! {
+        #rebind_self
+        ::embers_transpile::__private::return_function_with_closure(
+            (#args_as_expression_handles), // we pass this so the return_function_with_closure can infer the type for Args
+            move |_block_builder, _args| {
+                #bind_args
+                todo!();
+            },
+            move |_function_builder, _body_generator| {
+                _function_builder.add_name(#func_name_lit);
+                let mut _args = ::embers_transpile::__private::Vec::new();
+                #collect_args
+                _function_builder.add_output::<#output_type>()?;
+                let mut _block_builder = _function_builder.block();
+                _body_generator(&mut _block_builder, _args)?;
+                _block_builder.finish_root();
+                Ok(())
+            }
+        )
+    };
+
+    let output = if attrs.entrypoint {
+        let generics = &sig.generics;
+        quote! {
+            #vis fn #ident #generics () -> ::embers_transpile::__private::Result<::embers_transpile::__private::Module, ::embers_transpile::__private::BuilderError> {
+                #entrypoint_create_args
+                let mut module_builder = ::embers_transpile::__private::ModuleBuilder::default();
+                #entrypoint_add_globals
+                let function: ::embers_transpile::__private::Return<::embers_transpile::__private::Unit> = #create_function;
+                module_builder.add_entrypoint(
+                    function.generator,
+                )?;
+                let module = module_builder.build();
+                Ok(module)
+            }
+        }
+    }
+    else {
+        quote! {
+            #vis #new_sig {
+                #create_function
+            }
         }
     };
 
-    let generics = &sig.generics;
-
-    let sig = quote! {
-        fn #ident #generics (#(#inputs),*) -> impl ::embers_transpile::__private::GenerateCall<Return = #ret>
-    };
-
-    (sig, ret, has_receiver)
+    Ok(output)
 }
 
+pub enum Input {
+    Receiver {
+        pointer: bool,
+    },
+    Plain {
+        name: Ident,
+        ty: TokenStream,
+        entry_point_attrs: Option<EntryPointArgMeta>,
+    },
+    Wild {
+        assigned_name: Ident,
+        ty: TokenStream,
+        entry_point_attrs: Option<EntryPointArgMeta>,
+    },
+}
+
+impl Input {
+    pub fn entry_point_attrs(&self) -> Option<&EntryPointArgMeta> {
+        match self {
+            Input::Receiver { .. } => None,
+            Input::Plain {
+                entry_point_attrs, ..
+            }
+            | Input::Wild {
+                entry_point_attrs, ..
+            } => entry_point_attrs.as_ref(),
+        }
+    }
+
+    pub fn name_expression(&self) -> TokenStream {
+        match self {
+            Input::Receiver { pointer } => {
+                quote! {::embers_transpile::__private::Some("self".to_owned())}
+            }
+            Input::Plain { name, .. } => {
+                let name_lit = ident_to_literal(name);
+                quote! {::embers_transpile::__private::Some(#name_lit.to_owned())}
+            }
+            Input::Wild { .. } => quote! {::embers_transpile::__private::None},
+        }
+    }
+
+    pub fn ident(&self) -> Ident {
+        match self {
+            Input::Receiver { .. } => Ident::new("_self", Span::call_site()),
+            Input::Plain {
+                name,
+                ty,
+                entry_point_attrs,
+            } => name.clone(),
+            Input::Wild {
+                assigned_name,
+                ty,
+                entry_point_attrs,
+            } => assigned_name.clone(),
+        }
+    }
+
+    pub fn ty(&self) -> TokenStream {
+        match self {
+            Input::Receiver { pointer } => {
+                if *pointer {
+                    quote! { ::embers_transpile::__private::SelfPointerArgument<Self, impl ::embers_transpile::__private::AddressSpace> }
+                }
+                else {
+                    quote! { ::embers_transpile::__private::SelfArgument<Self> }
+                }
+            }
+            Input::Plain { ty, .. } | Input::Wild { ty, .. } => quote! { #ty },
+        }
+    }
+
+    pub fn is_wild(&self) -> bool {
+        match self {
+            Input::Wild { .. } => true,
+            _ => false,
+        }
+    }
+}
+
+pub struct SignatureTransform {
+    pub new_sig: TokenStream,
+    pub has_receiver: bool,
+    pub inputs: Vec<Input>,
+    pub output_type: TokenStream,
+    pub ident: Ident,
+}
+
+impl SignatureTransform {
+    pub fn new(sig: &Signature, name_gen: &mut NameGen, entry_point: bool) -> Result<Self, Error> {
+        let mut has_receiver = false;
+        let mut input_sig = vec![];
+        let mut inputs = vec![];
+
+        let ident = &sig.ident;
+
+        for input in &sig.inputs {
+            match input {
+                FnArg::Receiver(receiver) => {
+                    assert!(!entry_point);
+                    assert!(!has_receiver);
+                    has_receiver = true;
+
+                    let ty = if receiver.reference.is_some() {
+                        quote! { ::embers_transpile::__private::SelfPointerArgument<Self, impl ::embers_transpile::__private::AddressSpace> }
+                    }
+                    else {
+                        quote! { ::embers_transpile::__private::SelfArgument<Self> }
+                    };
+                    input_sig.push(quote! { self: #ty });
+
+                    inputs.push(Input::Receiver {
+                        pointer: receiver.reference.is_some(),
+                    });
+                }
+                FnArg::Typed(pat_type) => {
+                    let pat = &pat_type.pat;
+                    let mut ty = pat_type.ty.clone();
+                    map_types(&mut ty, TypePosition::Argument);
+
+                    let entry_point_attrs = entry_point
+                        .then(|| {
+                            EntrypointArgAttributes::from_attributes(&pat_type.attrs)
+                                .map(|a| a.meta)
+                        })
+                        .transpose()?;
+
+                    match &**pat {
+                        Pat::Ident(pat_ident) => {
+                            input_sig.push(
+                                quote! { #pat: ::embers_transpile::__private::Argument<#ty> },
+                            );
+                            inputs.push(Input::Plain {
+                                name: pat_ident.ident.clone(),
+                                ty: quote! {#ty},
+                                entry_point_attrs,
+                            });
+                        }
+                        Pat::Wild(_) => {
+                            let assigned_name = name_gen.tmp_var("wild");
+                            input_sig.push(quote! { #assigned_name: ::embers_transpile::__private::Argument<#ty> });
+                            inputs.push(Input::Wild {
+                                assigned_name,
+                                ty: quote! {#ty},
+                                entry_point_attrs,
+                            });
+                        }
+                        _ => panic!("unsupported pattern in argument position"),
+                    }
+                }
+            }
+        }
+
+        let output_type = match &sig.output {
+            ReturnType::Default => quote! { ::embers_transpile::__private::Unit },
+            ReturnType::Type(_, ty) => {
+                let mut ty = ty.clone();
+                map_types(&mut ty, TypePosition::ReturnType);
+                quote! { #ty }
+            }
+        };
+
+        let generics = &sig.generics;
+
+        let new_sig = quote! {
+            fn #ident #generics (#(#input_sig),*) -> ::embers_transpile::__private::Return<#output_type>
+        };
+
+        Ok(Self {
+            new_sig,
+            has_receiver,
+            inputs,
+            output_type,
+            ident: ident.clone(),
+        })
+    }
+}
+
+/*
 fn generate_function_body(
     sig: &Signature,
     ret: TokenStream,
@@ -533,7 +781,7 @@ fn generate_function_body(
         // apparently we must not emit this expression
         //_block_builder.add_emit(&#result_var)?;
         _block_builder.add_statement(::embers_transpile::__private::naga::Statement::Return {
-            value: #result_var.get_handle(),
+            value: #result_var.get_naga(),
         })?;
 
         _block_builder.finish_root();
@@ -621,6 +869,7 @@ fn generate_function_body_inline(ret: TokenStream, block: &Block) -> Result<Toke
         }
     })
 }
+ */
 
 pub fn implicit_unit(
     expr: Option<ExprOut>,
@@ -715,7 +964,7 @@ fn process_stmt(
             None
         }
         Stmt::Item(item) => {
-            let item_output = crate::item::process_item(item, None)?;
+            let item_output = crate::item::process_item(item, None, name_gen)?;
             output.push(item_output);
             None
         }

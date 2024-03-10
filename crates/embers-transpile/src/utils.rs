@@ -12,3 +12,7 @@ pub fn try_all<I: IntoIterator<Item = Result<bool, E>>, E>(iter: I) -> Result<bo
     }
     Ok(true)
 }
+
+pub(crate) mod sealed {
+    pub trait Sealed {}
+}

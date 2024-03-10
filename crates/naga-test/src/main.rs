@@ -120,6 +120,7 @@ fn to_wgsl(module: &naga::Module) -> Result<String, Error> {
     Ok(wgsl)
 }
 
+/*
 #[transpile]
 mod shader {
     use shader_std::ops::Add;
@@ -155,18 +156,11 @@ mod shader {
         let mut id = global_id.x;
     }
 }
-
+*/
 #[transpile]
 mod test {
-    #[transpile(inline)]
-    fn bar(a: u32, b: u32) -> u32 {
-        3
-    }
-
     #[transpile(entrypoint)]
-    pub fn test() {
-        let mut x = bar(1, 2);
-    }
+    pub fn test() {}
 }
 
 fn main() -> Result<(), Error> {

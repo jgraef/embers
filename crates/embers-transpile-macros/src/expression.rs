@@ -281,14 +281,15 @@ pub fn process_expr(
         Expr::Loop(_loop_) => todo!("process_expr -> Expr::Loop"),
         Expr::Macro(macro_) => crate::function::process_macro(&macro_.mac, output, name_gen)?,
         Expr::MethodCall(call) => {
-            let mut func_args = vec![];
+            /*let mut func_args = vec![];
             for arg in &call.args {
                 let arg = process_expr(arg, output, name_gen)?;
                 func_args.push(arg);
             }
 
             let receiver = process_expr(&call.receiver, output, name_gen)?;
-            emit_method_call(output, name_gen, receiver, &call.method, &func_args)
+            emit_method_call(output, name_gen, receiver, &call.method, &func_args)*/
+            todo!();
         }
         Expr::Paren(paren) => {
             assert!(paren.attrs.is_empty());
@@ -324,8 +325,8 @@ pub fn process_expr(
                 let out = process_expr(expr, output, name_gen)?;
                 output.push(quote! {
                     let #out = ::embers_transpile::__private::AsExpression::as_expression(&#out, &mut _block_builder)?;
-                    _block_builder.function_builder.add_emit(&#out)?;
-                    let _return_value = #out.get_handle();
+                    //_block_builder.function_builder.add_emit(&#out)?;
+                    let _return_value = #out.get_naga();
                 });
             }
             else {

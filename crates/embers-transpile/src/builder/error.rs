@@ -19,4 +19,6 @@ pub enum BuilderError {
     BadHandle,
     #[error("function ({name:?}) can't capture variables")]
     FunctionCantCapture { name: Option<String> },
+    #[error("type not found: {name}")]
+    TypeNotFound { name: String },
 }

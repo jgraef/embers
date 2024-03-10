@@ -71,14 +71,14 @@ pub mod address_space {
     }
 }
 
-pub struct Pointer<T: ShaderType + ?Sized, A: AddressSpace> {
+pub struct Pointer<T: ?Sized, A> {
     // todo: put ExpressionHandle in here and implement AsExpression and FromExpression
     handle: ExpressionHandle<Self>,
     _ty: PhantomData<T>,
     _space: PhantomData<A>,
 }
 
-impl<T: ShaderType, A: AddressSpace> ShaderType for Pointer<T, A> {
+impl<T: ShaderType + ?Sized, A: AddressSpace> ShaderType for Pointer<T, A> {
     fn add_to_module(module_builder: &mut ModuleBuilder) -> Result<TypeHandle, BuilderError> {
         let base = module_builder.get_type_by_id_or_add_it::<T>()?;
         let Some(base) = base.get_data()
@@ -90,7 +90,7 @@ impl<T: ShaderType, A: AddressSpace> ShaderType for Pointer<T, A> {
     }
 }
 
-impl<T: ShaderType, A: AddressSpace> AsExpression<Pointer<T, A>> for Pointer<T, A> {
+impl<T: ShaderType + ?Sized, A: AddressSpace> AsExpression<Pointer<T, A>> for Pointer<T, A> {
     fn as_expression(
         &self,
         _block_builder: &mut BlockBuilder,
@@ -99,20 +99,20 @@ impl<T: ShaderType, A: AddressSpace> AsExpression<Pointer<T, A>> for Pointer<T, 
     }
 }
 
-impl<T: ShaderType, A: AddressSpace> ExpressionHandle<Pointer<T, A>> {
+impl<T: ShaderType + ?Sized, A: AddressSpace> ExpressionHandle<Pointer<T, A>> {
     pub fn load(
         &self,
         block_builder: &mut BlockBuilder,
     ) -> Result<ExpressionHandle<T>, BuilderError> {
-        let expr = match self {
-            ExpressionHandle::Handle { handle, .. } => {
-                let expr = block_builder
-                    .function_builder
-                    .add_expression(Expression::Load { pointer: *handle })?;
-                block_builder.add_emit(&expr)?;
-                expr
-            }
-            ExpressionHandle::Empty { _ty } => ExpressionHandle::empty(),
+        let expr = if let Some(handle) = self.get_naga() {
+            let expr = block_builder
+                .function_builder
+                .add_expression(Expression::Load { pointer: handle })?;
+            //block_builder.add_emit(&expr)?;
+            expr
+        }
+        else {
+            ExpressionHandle::empty()
         };
 
         Ok(expr)
@@ -123,9 +123,9 @@ impl<T: ShaderType, A: AddressSpace> ExpressionHandle<Pointer<T, A>> {
         value: &ExpressionHandle<T>,
         block_builder: &mut BlockBuilder,
     ) -> Result<(), BuilderError> {
-        if let Some(handle) = self.get_handle() {
+        if let Some(handle) = self.get_naga() {
             block_builder.add_emit(value)?;
-            let value = value.try_get_handle()?;
+            let value = value.try_get_naga()?;
             block_builder.add_statement(Statement::Store {
                 pointer: handle,
                 value,

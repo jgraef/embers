@@ -99,7 +99,7 @@ pub fn process_struct(
 
         // expression for Compose impl
         compose_field_exprs.push(quote!{
-            ::embers_transpile::__private::AsExpression::as_expression(&self.#name, &mut block_builder)?.get_handle(),
+            ::embers_transpile::__private::AsExpression::as_expression(&self.#name, &mut block_builder)?.get_naga(),
         });
 
         // add trait bound to field type for ShaderType impl

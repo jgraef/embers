@@ -12,7 +12,10 @@ use syn::{
 
 use crate::{
     error::Error,
-    utils::TokenBuffer,
+    utils::{
+        NameGen,
+        TokenBuffer,
+    },
 };
 
 #[derive(Debug, FromAttributes)]
@@ -48,6 +51,7 @@ impl ModMeta {
 pub fn process_module(
     module: &ItemMod,
     attributes: Option<&[NestedMeta]>,
+    name_gen: &mut NameGen,
 ) -> Result<TokenStream, Error> {
     let mut output = TokenBuffer::default();
     let args = ModMeta::parse(attributes, &module.attrs)?;
@@ -67,7 +71,7 @@ pub fn process_module(
     if let Some((_, items)) = &module.content {
         // todo: include shader_std::prelude::*
         for item in items {
-            output.push(crate::item::process_item(item, None)?);
+            output.push(crate::item::process_item(item, None, name_gen)?);
         }
 
         let vis = &module.vis;

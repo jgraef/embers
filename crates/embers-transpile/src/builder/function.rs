@@ -5,6 +5,7 @@ use std::{
     },
     collections::HashMap,
     marker::PhantomData,
+    ops::Deref,
     thread::Builder,
 };
 
@@ -21,6 +22,7 @@ use naga::{
     Handle,
     LocalVariable,
     ShaderStage,
+    Statement,
     Type,
     TypeInner,
 };
@@ -30,6 +32,7 @@ use super::{
     error::BuilderError,
     expression::{
         AsExpression,
+        DynExpressionHandle,
         ExpressionHandle,
     },
     module::ModuleBuilder,
@@ -53,9 +56,16 @@ use super::{
         ScopeId,
     },
 };
-use crate::utils::try_all;
+use crate::{
+    shader_std::marker::TupleOfExpressionHandles,
+    utils::{
+        sealed::Sealed,
+        try_all,
+    },
+};
 
-pub trait FunctionTrait<Args> {
+// todo: add trait bound for Args: TupleOfExpressionHandles
+pub trait FunctionTrait<Args>: Sized {
     type Output;
 
     fn call(
@@ -65,255 +75,302 @@ pub trait FunctionTrait<Args> {
     ) -> Result<ExpressionHandle<Self::Output>, BuilderError>;
 }
 
-impl<A, B, F: Fn(ExpressionHandle<A>, ExpressionHandle<B>) -> G, G: GenerateCall>
-    FunctionTrait<(ExpressionHandle<A>, ExpressionHandle<B>)> for F
+pub trait GenerateFunction: 'static {
+    fn generate_body(
+        &self,
+        block_builder: &mut BlockBuilder,
+        args: Vec<DynFnInputBinding>,
+    ) -> Result<DynExpressionHandle, BuilderError>;
+
+    fn generate_function(&self, function_builder: &mut FunctionBuilder)
+        -> Result<(), BuilderError>;
+}
+
+impl<T: GenerateFunction + ?Sized> GenerateFunction for Box<T> {
+    fn generate_body(
+        &self,
+        block_builder: &mut BlockBuilder,
+        args: Vec<DynFnInputBinding>,
+    ) -> Result<DynExpressionHandle, BuilderError> {
+        self.deref().generate_body(block_builder, args)
+    }
+
+    fn generate_function(
+        &self,
+        function_builder: &mut FunctionBuilder,
+    ) -> Result<(), BuilderError> {
+        self.deref().generate_function(function_builder)
+    }
+}
+
+pub struct FunctionType<Args, Output, Generator> {
+    _args: PhantomData<Args>,
+    _output: PhantomData<Output>,
+    _generator: PhantomData<Generator>,
+}
+
+impl<Args, Output, Generator> FunctionType<Args, Output, Generator> {
+    pub fn new(_: &Args, _: &ExpressionHandle<Output>, _: &Generator) -> Self {
+        Self {
+            _args: PhantomData,
+            _output: PhantomData,
+            _generator: PhantomData,
+        }
+    }
+}
+
+pub struct Argument<T: ?Sized> {
+    _type: PhantomData<T>,
+}
+
+impl<T: ?Sized> Argument<T> {
+    pub fn new() -> Self {
+        Self { _type: PhantomData }
+    }
+
+    pub fn from_expression_handle(_: ExpressionHandle<T>) -> Self {
+        Self::new()
+    }
+
+    pub fn as_empty_expression_handle(&self) -> ExpressionHandle<T> {
+        ExpressionHandle::empty()
+    }
+}
+
+impl<T: ?Sized> Clone for Argument<T> {
+    fn clone(&self) -> Self {
+        Self::new()
+    }
+}
+
+impl<T: ?Sized> Copy for Argument<T> {}
+
+pub struct SelfArgument<T: ?Sized> {
+    arg: Argument<T>,
+}
+
+impl<T: ?Sized> SelfArgument<T> {
+    pub fn from_argument(arg: Argument<T>) -> Self {
+        Self { arg }
+    }
+
+    pub fn into_argument(self) -> Argument<T> {
+        self.arg
+    }
+
+    pub fn as_empty_expression_handle(&self) -> ExpressionHandle<T> {
+        self.arg.as_empty_expression_handle()
+    }
+}
+
+impl<T: ?Sized> Deref for SelfArgument<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        panic!("SelfArgument must not be dereferenced");
+    }
+}
+
+impl<T: ?Sized> Clone for SelfArgument<T> {
+    fn clone(&self) -> Self {
+        Self {
+            arg: self.arg.clone(),
+        }
+    }
+}
+
+impl<T: ?Sized> Copy for SelfArgument<T> {}
+
+pub struct SelfPointerArgument<T: ?Sized, A> {
+    arg: Argument<Pointer<T, A>>,
+}
+
+impl<T: ?Sized, A> SelfPointerArgument<T, A> {
+    pub fn from_argument(arg: Argument<Pointer<T, A>>) -> Self {
+        Self { arg }
+    }
+
+    pub fn into_argument(self) -> Argument<Pointer<T, A>> {
+        self.arg
+    }
+
+    pub fn as_empty_expression_handle(&self) -> ExpressionHandle<Pointer<T, A>> {
+        self.arg.as_empty_expression_handle()
+    }
+}
+
+impl<T: ?Sized, A: AddressSpace> Deref for SelfPointerArgument<T, A> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        panic!("SelfPointerArgument must not be dereferenced");
+    }
+}
+
+impl<T: ?Sized, A> Clone for SelfPointerArgument<T, A> {
+    fn clone(&self) -> Self {
+        Self {
+            arg: self.arg.clone(),
+        }
+    }
+}
+
+impl<T: ?Sized, A> Copy for SelfPointerArgument<T, A> {}
+
+pub struct Return<R: ?Sized> {
+    pub generator: Box<dyn GenerateFunction>,
+    return_type: PhantomData<R>,
+    func_id: TypeId,
+}
+
+pub fn return_function_with_generator<
+    Args: 'static,
+    Output: 'static,
+    Generator: GenerateFunction + 'static,
+>(
+    _args: Args,
+    generator: Generator,
+) -> Return<Output> {
+    let func_id = TypeId::of::<FunctionType<Args, Output, Generator>>();
+    Return {
+        generator: Box::new(generator),
+        return_type: PhantomData,
+        func_id,
+    }
+}
+
+pub fn return_function_with_closure<
+    Args: 'static,
+    Output: 'static,
+    Body: Fn(&mut BlockBuilder, Vec<DynFnInputBinding>) -> Result<DynExpressionHandle, BuilderError>
+        + 'static,
+    Func: Fn(&mut FunctionBuilder, &Body) -> Result<(), BuilderError> + 'static,
+>(
+    args: Args,
+    body: Body,
+    func: Func,
+) -> Return<Output> {
+    struct G<Body, Func> {
+        body: Body,
+        func: Func,
+    }
+
+    impl<
+            Body: Fn(
+                    &mut BlockBuilder,
+                    Vec<DynFnInputBinding>,
+                ) -> Result<DynExpressionHandle, BuilderError>
+                + 'static,
+            Func: Fn(&mut FunctionBuilder, &Body) -> Result<(), BuilderError> + 'static,
+        > GenerateFunction for G<Body, Func>
+    {
+        fn generate_body(
+            &self,
+            block_builder: &mut BlockBuilder,
+            args: Vec<DynFnInputBinding>,
+        ) -> Result<DynExpressionHandle, BuilderError> {
+            (self.body)(block_builder, args)
+        }
+
+        fn generate_function(
+            &self,
+            function_builder: &mut FunctionBuilder,
+        ) -> Result<(), BuilderError> {
+            (self.func)(function_builder, &self.body)
+        }
+    }
+
+    return_function_with_generator(args, G { body, func })
+}
+
+impl<
+        A1: 'static,
+        A2: 'static,
+        R: 'static,
+        F: Fn(Argument<A1>, Argument<A2>) -> Return<R>,
+        G: GenerateFunction,
+    > AsExpression<FunctionType<(A1, A2), R, G>> for F
 {
-    type Output = G::Return;
+    fn as_expression(
+        &self,
+        block_builder: &mut BlockBuilder,
+    ) -> Result<ExpressionHandle<FunctionType<(A1, A2), R, G>>, BuilderError> {
+        let Return {
+            generator, func_id, ..
+        } = self(Argument::new().into(), Argument::new());
+        block_builder
+            .function_builder
+            .module_builder
+            .add_function(func_id, generator)?;
+        Ok(ExpressionHandle::empty())
+    }
+}
+
+impl<A1: 'static, A2: 'static, R: 'static, G: 'static>
+    FunctionTrait<(ExpressionHandle<A1>, ExpressionHandle<A2>)> for FunctionType<(A1, A2), R, G>
+{
+    type Output = R;
 
     fn call(
         func: ExpressionHandle<Self>,
-        args: (ExpressionHandle<A>, ExpressionHandle<B>),
+        args: (ExpressionHandle<A1>, ExpressionHandle<A2>),
         block_builder: &mut BlockBuilder,
     ) -> Result<ExpressionHandle<Self::Output>, BuilderError> {
-        todo!()
-    }
-}
-
-pub trait GenerateFunction: 'static {
-    fn generate(&self, function_builder: &mut FunctionBuilder) -> Result<(), BuilderError>;
-}
-
-pub trait GenerateCall: 'static {
-    type Return;
-    fn call(
-        &self,
-        block_builder: &mut BlockBuilder,
-    ) -> Result<ExpressionHandle<Self::Return>, BuilderError>;
-}
-
-pub struct CallGenerator<B, C, R> {
-    body: B,
-    call: C,
-    _return_type: PhantomData<R>,
-}
-
-impl<B, C, R> CallGenerator<B, C, R> {
-    pub fn new(body: B, call: C) -> Self {
-        Self {
-            body,
-            call,
-            _return_type: PhantomData,
-        }
-    }
-}
-
-impl<
-        B: Fn(&mut FunctionBuilder) -> Result<(), BuilderError> + 'static,
-        C: Fn(&mut BlockBuilder, TypeHandle) -> Result<ExpressionHandle<R>, BuilderError> + 'static,
-        R: 'static,
-    > GenerateCall for CallGenerator<B, C, R>
-{
-    type Return = R;
-
-    fn call(&self, block_builder: &mut BlockBuilder) -> Result<ExpressionHandle<R>, BuilderError> {
-        let func_handle = block_builder
+        let func = block_builder
             .function_builder
             .module_builder
-            .get_func_by_id_or_add_it(self)?;
-        let ret_handle = (self.call)(block_builder, func_handle)?;
-        Ok(ret_handle)
+            .get_type::<Self>()?
+            .try_get_code()?;
+        generate_call::<R>(
+            block_builder,
+            func,
+            [args.0.get_naga(), args.1.get_naga()]
+                .into_iter()
+                .flatten()
+                .collect(),
+        )
     }
 }
 
-impl<B: Fn(&mut FunctionBuilder) -> Result<(), BuilderError> + 'static, C: 'static, R: 'static>
-    GenerateFunction for CallGenerator<B, C, R>
-{
-    fn generate(&self, function_builder: &mut FunctionBuilder) -> Result<(), BuilderError> {
-        (self.body)(function_builder)?;
-        Ok(())
+fn generate_method_call<R: 'static>(
+    block_builder: &mut BlockBuilder,
+    method: Return<R>,
+    arguments: Vec<Handle<Expression>>,
+) -> Result<ExpressionHandle<R>, BuilderError> {
+    let func = block_builder
+        .function_builder
+        .module_builder
+        .add_function(method.func_id, method.generator)?;
+    generate_call::<R>(block_builder, func.try_get_code()?, arguments)
+}
+
+fn generate_call<R: 'static>(
+    block_builder: &mut BlockBuilder,
+    naga_func: Handle<Function>,
+    arguments: Vec<Handle<Expression>>,
+) -> Result<ExpressionHandle<R>, BuilderError> {
+    let ret_type = block_builder
+        .function_builder
+        .module_builder
+        .get_type::<R>()?;
+
+    let ret = if ret_type.is_zero_sized() {
+        ExpressionHandle::<R>::empty()
     }
+    else {
+        block_builder
+            .function_builder
+            .add_expression::<R>(Expression::CallResult(naga_func))?
+    };
+
+    block_builder.add_statement(Statement::Call {
+        function: naga_func,
+        arguments,
+        result: ret.get_naga(),
+    })?;
+
+    Ok(ret)
 }
-
-pub struct InlineCallGenerator<B, R> {
-    body: B,
-    _return_type: PhantomData<R>,
-}
-
-impl<B, R> InlineCallGenerator<B, R> {
-    pub fn new(body: B) -> Self {
-        Self {
-            body,
-            _return_type: PhantomData,
-        }
-    }
-}
-
-impl<
-        B: Fn(&mut BlockBuilder) -> Result<ExpressionHandle<R>, BuilderError> + 'static,
-        R: 'static,
-    > GenerateCall for InlineCallGenerator<B, R>
-{
-    type Return = R;
-
-    fn call(&self, block_builder: &mut BlockBuilder) -> Result<ExpressionHandle<R>, BuilderError> {
-        let ret_handle = (self.body)(block_builder)?;
-        Ok(ret_handle)
-    }
-}
-
-pub struct EntrypointGenerator<B> {
-    body: B,
-}
-
-impl<B> EntrypointGenerator<B> {
-    pub fn new(body: B) -> Self {
-        Self { body }
-    }
-}
-
-impl<B: Fn(&mut FunctionBuilder) -> Result<(), BuilderError> + 'static> GenerateFunction
-    for EntrypointGenerator<B>
-{
-    fn generate(&self, function_builder: &mut FunctionBuilder) -> Result<(), BuilderError> {
-        (self.body)(function_builder)?;
-        Ok(())
-    }
-}
-
-pub struct PhantomReceiver<T: ?Sized> {
-    handle: ExpressionHandle<T>,
-}
-
-impl<T: ?Sized> PhantomReceiver<T> {
-    pub fn unpack(self) -> ExpressionHandle<T> {
-        self.handle
-    }
-}
-
-impl<T: ?Sized> std::ops::Deref for PhantomReceiver<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        panic!("bug: PhantomReceiver is not meant to be dereferenced")
-    }
-}
-
-impl<T: ?Sized> From<ExpressionHandle<T>> for PhantomReceiver<T> {
-    fn from(handle: ExpressionHandle<T>) -> Self {
-        Self { handle }
-    }
-}
-
-impl<T: ?Sized> AsExpression<T> for PhantomReceiver<T> {
-    fn as_expression(
-        &self,
-        _block_builder: &mut BlockBuilder,
-    ) -> Result<ExpressionHandle<T>, BuilderError> {
-        Ok(self.handle.clone())
-    }
-}
-
-/*
-impl<T: ?Sized> IntoExpression<T> for PhantomReceiver<T> {
-    fn into_expression(self) -> ExpressionHandle<T> {
-        self.handle
-    }
-}
- */
-
-impl<T: ?Sized> Clone for PhantomReceiver<T> {
-    fn clone(&self) -> Self {
-        Self {
-            handle: self.handle,
-        }
-    }
-}
-
-impl<T: ?Sized> Copy for PhantomReceiver<T> {}
-
-pub struct PhantomReceiverPointer<T: ShaderType + ?Sized, A: AddressSpace> {
-    handle: ExpressionHandle<Pointer<T, A>>,
-}
-
-impl<T: ShaderType + ?Sized, A: AddressSpace> PhantomReceiverPointer<T, A> {
-    pub fn unpack(self) -> ExpressionHandle<Pointer<T, A>> {
-        self.handle
-    }
-}
-
-impl<T: ShaderType + ?Sized, A: AddressSpace> std::ops::Deref for PhantomReceiverPointer<T, A> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        panic!("bug: PhantomReceiverPointer is not meant to be dereferenced")
-    }
-}
-
-impl<T: ShaderType + ?Sized, A: AddressSpace> From<ExpressionHandle<Pointer<T, A>>>
-    for PhantomReceiverPointer<T, A>
-{
-    fn from(handle: ExpressionHandle<Pointer<T, A>>) -> Self {
-        Self { handle }
-    }
-}
-
-impl<T: ShaderType + ?Sized, A: AddressSpace> AsExpression<Pointer<T, A>>
-    for PhantomReceiverPointer<T, A>
-{
-    fn as_expression(
-        &self,
-        _block_builder: &mut BlockBuilder,
-    ) -> Result<ExpressionHandle<Pointer<T, A>>, BuilderError> {
-        Ok(self.handle.clone())
-    }
-}
-
-/*
-impl<T: ShaderType + ?Sized, A: AddressSpace> IntoExpression<Pointer<T, A>>
-    for PhantomReceiverPointer<T, A>
-{
-    fn into_expression(self) -> ExpressionHandle<Pointer<T, A>> {
-        self.handle
-    }
-}
- */
-
-impl<T: ShaderType + ?Sized, A: AddressSpace> Clone for PhantomReceiverPointer<T, A> {
-    fn clone(&self) -> Self {
-        Self {
-            handle: self.handle,
-        }
-    }
-}
-
-pub struct TypeHelper<T>(PhantomData<T>);
-
-impl<T> TypeHelper<T> {
-    pub fn from_argument(_: &T) -> Self {
-        Self(PhantomData)
-    }
-
-    pub fn from_receiver(_: &PhantomReceiver<T>) -> Self {
-        Self(PhantomData)
-    }
-
-    pub fn from_receiver_pointer<A: AddressSpace>(_: &PhantomReceiverPointer<T, A>) -> Self
-    where
-        T: ShaderType,
-    {
-        Self(PhantomData)
-    }
-}
-
-impl<T> Clone for TypeHelper<T> {
-    fn clone(&self) -> Self {
-        Self(PhantomData)
-    }
-}
-
-impl<T> Copy for TypeHelper<T> {}
-
-impl<T: ShaderType + ?Sized, A: AddressSpace> Copy for PhantomReceiverPointer<T, A> {}
 
 pub struct FunctionBuilder<'m> {
     pub module_builder: &'m mut ModuleBuilder,
@@ -377,10 +434,10 @@ impl<'m> FunctionBuilder<'m> {
         }
     }
 
-    pub fn add_input_named<T: ShaderType>(
+    pub fn add_input<T: ShaderType>(
         &mut self,
-        ident: impl ToString,
-        _: ExpressionHandle<T>,
+        name: Option<String>,
+        _: Argument<T>,
         is_mut: bool,
         binding: Option<Binding>,
     ) -> Result<FnInputBinding<T>, BuilderError> {
@@ -389,7 +446,7 @@ impl<'m> FunctionBuilder<'m> {
             let i = self.inputs.len();
             self.inputs.push(FunctionArgument {
                 ty: naga_ty,
-                name: Some(ident.to_string()),
+                name,
                 binding,
             });
             Ok(FnInputBinding::new(i, is_mut))
@@ -416,7 +473,7 @@ impl<'m> FunctionBuilder<'m> {
         let is_const = self.expression_is_const(&expr)?;
         let handle = self.expressions.append(expr, Default::default());
         self.const_expressions.insert(handle, is_const);
-        let mut handle = ExpressionHandle::new(handle);
+        let mut handle = ExpressionHandle::from_naga(handle);
         if is_const {
             handle.promote_const();
         }
@@ -428,7 +485,7 @@ impl<'m> FunctionBuilder<'m> {
         name: impl ToString,
         expr: ExpressionHandle<T>,
     ) -> Result<(), BuilderError> {
-        let handle = expr.try_get_handle()?;
+        let handle = expr.try_get_naga()?;
         self.named_expressions.insert(handle, name.to_string());
         Ok(())
     }
@@ -445,7 +502,7 @@ impl<'m> FunctionBuilder<'m> {
                     if !init.is_const() {
                         return Err(BuilderError::NotConst);
                     }
-                    init.try_get_handle()
+                    init.try_get_naga()
                 })
                 .transpose()?;
             let handle = self.local_variables.append(
@@ -654,7 +711,7 @@ impl<'m> FunctionBuilder<'m> {
                 }
             })?;
 
-            if let Some(handle) = expression.get_handle() {
+            if let Some(handle) = expression.get_naga() {
                 // map outer expression to inner expression
                 let handle = if let Some(handle) = captures.expressions.get(&handle) {
                     *handle
@@ -692,7 +749,7 @@ impl<'m> FunctionBuilder<'m> {
                     out_handle
                 };
 
-                ExpressionHandle::<T>::new(handle)
+                ExpressionHandle::<T>::from_naga(handle)
             }
             else {
                 // empty type
@@ -715,6 +772,7 @@ struct CapturesBuilder {
 
     /// maps outer expressions to inner expressions (access into captures
     /// struct)
+    /// todo: we could also make this map DynExpressionHandle
     expressions: HashMap<Handle<Expression>, Handle<Expression>>,
 }
 
@@ -723,6 +781,7 @@ pub struct Captures {
     pub values: Vec<Handle<Expression>>,
 }
 
+#[derive(Debug)]
 pub struct FnInputBinding<T> {
     /// Some if this binding has a concrete naga type, None if it's a phantom.
     index: Option<usize>,
@@ -746,6 +805,10 @@ impl<T> FnInputBinding<T> {
             _ty: PhantomData,
         }
     }
+
+    pub fn as_dyn(&self) -> DynFnInputBinding {
+        DynFnInputBinding::Input { index: self.index }
+    }
 }
 
 impl<T: ShaderType> AsExpression<T> for FnInputBinding<T> {
@@ -764,4 +827,12 @@ impl<T: ShaderType> AsExpression<T> for FnInputBinding<T> {
 
         Ok(expr)
     }
+}
+
+/// A type-erased input binding that might also be an expression handle (for
+/// inline calling)
+#[derive(Clone, Copy, Debug)]
+pub enum DynFnInputBinding {
+    Input { index: Option<usize> },
+    Expression { dyn_handle: DynExpressionHandle },
 }

@@ -12,7 +12,10 @@ use super::{
         AsExpression,
         ExpressionHandle,
     },
-    function::FunctionBuilder,
+    function::{
+        Argument,
+        FunctionBuilder,
+    },
     pointer::{
         address_space,
         AddressSpace,
@@ -173,7 +176,7 @@ impl<T: ?Sized, A> GlobalVariable<T, A> {
     }
 }
 
-impl<T: ShaderType + ?Sized, A: AddressSpace> AsExpression<Pointer<T, A>> for GlobalVariable<T, A> {
+impl<T: ?Sized, A> AsExpression<Pointer<T, A>> for GlobalVariable<T, A> {
     fn as_expression(
         &self,
         block_builder: &mut BlockBuilder,
@@ -187,5 +190,15 @@ impl<T: ShaderType + ?Sized, A: AddressSpace> AsExpression<Pointer<T, A>> for Gl
             GlobalVariableHandle::Empty => ExpressionHandle::empty(),
         };
         Ok(expression_handle)
+    }
+}
+
+impl<T: ?Sized, A> ExpressionHandle<Pointer<T, A>> {
+    pub fn from_global_arg(
+        _: Argument<T>,
+        global: GlobalVariable<T, A>,
+        block_builder: &mut BlockBuilder,
+    ) -> Result<Self, BuilderError> {
+        global.as_expression(block_builder)
     }
 }

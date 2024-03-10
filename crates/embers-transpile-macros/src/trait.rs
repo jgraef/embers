@@ -12,14 +12,18 @@ use crate::{
     error::Error,
     function::{
         process_impl_function,
-        transform_signature_to_generator,
+        SignatureTransform,
     },
-    utils::TokenBuffer,
+    utils::{
+        NameGen,
+        TokenBuffer,
+    },
 };
 
 pub fn process_trait(
     input: &ItemTrait,
     _attributes: Option<&[NestedMeta]>,
+    name_gen: &mut NameGen,
 ) -> Result<TokenStream, Error> {
     let vis = &input.vis;
     let ident = &input.ident;
@@ -29,8 +33,9 @@ pub fn process_trait(
     for item in &input.items {
         match item {
             TraitItem::Fn(fn_item) => {
-                let (sig, _ret, _has_receiver) = transform_signature_to_generator(&fn_item.sig);
-                output.push(quote! { #sig; });
+                let SignatureTransform { new_sig, .. } =
+                    SignatureTransform::new(&fn_item.sig, name_gen, false)?;
+                output.push(quote! { #new_sig; });
             }
             _ => output.push(quote! { #item }),
         }
@@ -52,6 +57,7 @@ pub fn process_trait(
 pub fn process_impl(
     input: &ItemImpl,
     _attributes: Option<&[NestedMeta]>,
+    name_gen: &mut NameGen,
 ) -> Result<TokenStream, Error> {
     let trait_for = input.trait_.as_ref().map(|(not, trait_, for_token)| {
         assert!(not.is_none());
@@ -64,7 +70,7 @@ pub fn process_impl(
     for item in &input.items {
         match item {
             ImplItem::Fn(fn_item) => {
-                output.push(process_impl_function(fn_item, None)?);
+                output.push(process_impl_function(fn_item, None, name_gen)?);
             }
             _ => output.push(quote! { #item }),
         }

@@ -7,6 +7,7 @@ use std::{
 };
 
 use naga::{
+    Block,
     Expression,
     Handle,
 };
@@ -14,43 +15,115 @@ use naga::{
 use super::{
     block::BlockBuilder,
     error::BuilderError,
+    function::{
+        Argument,
+        DynFnInputBinding,
+    },
+    pointer::AddressSpace,
+    variable::GlobalVariable,
 };
 
-#[derive(Debug)]
-#[must_use]
-pub enum ExpressionHandle<T: ?Sized> {
+#[derive(Clone, Copy, Debug)]
+pub enum DynExpressionHandle {
     Handle {
-        handle: naga::Handle<Expression>,
+        handle: Handle<Expression>,
         is_const: bool,
-        _ty: PhantomData<T>,
     },
-    Empty {
-        _ty: PhantomData<T>,
-    },
+    Empty,
 }
 
-impl<T: ?Sized> ExpressionHandle<T> {
-    pub fn new(handle: Handle<Expression>) -> Self {
+impl DynExpressionHandle {
+    pub fn from_typed<T: ?Sized>(handle: ExpressionHandle<T>) -> Self {
+        handle.dyn_handle
+    }
+
+    pub fn from_naga(handle: Handle<Expression>) -> Self {
         Self::Handle {
             handle,
             is_const: false,
-            _ty: PhantomData,
         }
     }
 
     pub fn empty() -> Self {
-        Self::Empty { _ty: PhantomData }
+        Self::Empty
     }
 
-    pub fn get_handle(&self) -> Option<Handle<Expression>> {
+    pub fn get_naga(&self) -> Option<Handle<Expression>> {
         match self {
-            ExpressionHandle::Handle { handle, .. } => Some(*handle),
-            _ => None,
+            DynExpressionHandle::Handle { handle, .. } => Some(*handle),
+            DynExpressionHandle::Empty => None,
         }
     }
 
-    pub fn try_get_handle(&self) -> Result<Handle<Expression>, BuilderError> {
-        self.get_handle().ok_or_else(|| {
+    pub fn is_empty(&self) -> bool {
+        matches!(self, Self::Empty)
+    }
+
+    pub fn promote_const(&mut self) {
+        match self {
+            Self::Handle { is_const, .. } => *is_const = true,
+            Self::Empty => {}
+        }
+    }
+
+    pub fn is_const(&self) -> bool {
+        match self {
+            Self::Handle { is_const, .. } => *is_const,
+            Self::Empty => true,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct ExpressionHandle<T: ?Sized> {
+    dyn_handle: DynExpressionHandle,
+    _type: PhantomData<T>,
+}
+
+impl<T: ?Sized> ExpressionHandle<T> {
+    pub fn from_dyn(dyn_handle: DynExpressionHandle) -> Self {
+        Self {
+            dyn_handle,
+            _type: PhantomData,
+        }
+    }
+
+    pub fn from_naga(handle: Handle<Expression>) -> Self {
+        Self::from_dyn(DynExpressionHandle::from_naga(handle))
+    }
+
+    pub fn from_arg(
+        _: Argument<T>,
+        input: DynFnInputBinding,
+        block_builder: &mut BlockBuilder,
+    ) -> Result<Self, BuilderError> {
+        let expr = match input {
+            DynFnInputBinding::Input { index } => {
+                if let Some(index) = index {
+                    block_builder
+                        .function_builder
+                        .add_expression(Expression::FunctionArgument(index as u32))?
+                }
+                else {
+                    ExpressionHandle::empty()
+                }
+            }
+            DynFnInputBinding::Expression { dyn_handle } => ExpressionHandle::from_dyn(dyn_handle),
+        };
+
+        Ok(expr)
+    }
+
+    pub fn empty() -> Self {
+        Self::from_dyn(DynExpressionHandle::empty())
+    }
+
+    pub fn get_naga(&self) -> Option<Handle<Expression>> {
+        self.dyn_handle.get_naga()
+    }
+
+    pub fn try_get_naga(&self) -> Result<Handle<Expression>, BuilderError> {
+        self.get_naga().ok_or_else(|| {
             BuilderError::NoNagaType {
                 ty: type_name::<T>(),
             }
@@ -58,25 +131,29 @@ impl<T: ?Sized> ExpressionHandle<T> {
     }
 
     pub fn is_empty(&self) -> bool {
-        matches!(self, Self::Empty { .. })
+        self.dyn_handle.is_empty()
     }
 
     pub fn promote_const(&mut self) {
-        match self {
-            ExpressionHandle::Handle { is_const, .. } => *is_const = true,
-            ExpressionHandle::Empty { _ty } => {}
-        }
+        self.dyn_handle.promote_const()
     }
 
     pub fn is_const(&self) -> bool {
-        match self {
-            ExpressionHandle::Handle { is_const, .. } => *is_const,
-            ExpressionHandle::Empty { _ty } => true,
+        self.dyn_handle.is_const()
+    }
+
+    pub fn as_dyn(&self) -> DynExpressionHandle {
+        self.dyn_handle
+    }
+
+    pub fn as_dyn_input(&self) -> DynFnInputBinding {
+        DynFnInputBinding::Expression {
+            dyn_handle: self.dyn_handle,
         }
     }
 }
 
-impl<T: 'static> ExpressionHandle<T> {
+impl<T: ?Sized + 'static> ExpressionHandle<T> {
     pub fn type_id(&self) -> TypeId {
         TypeId::of::<T>()
     }
@@ -84,17 +161,9 @@ impl<T: 'static> ExpressionHandle<T> {
 
 impl<T: ?Sized> Clone for ExpressionHandle<T> {
     fn clone(&self) -> Self {
-        match self {
-            Self::Handle {
-                handle, is_const, ..
-            } => {
-                Self::Handle {
-                    handle: *handle,
-                    is_const: *is_const,
-                    _ty: PhantomData,
-                }
-            }
-            Self::Empty { _ty } => Self::Empty { _ty: PhantomData },
+        Self {
+            dyn_handle: self.dyn_handle.clone(),
+            _type: PhantomData,
         }
     }
 }
@@ -108,7 +177,7 @@ pub trait AsExpression<T: ?Sized> {
     ) -> Result<ExpressionHandle<T>, BuilderError>;
 }
 
-impl<T> AsExpression<T> for ExpressionHandle<T> {
+impl<T: ?Sized> AsExpression<T> for ExpressionHandle<T> {
     fn as_expression(
         &self,
         _block_builder: &mut BlockBuilder,
@@ -116,25 +185,3 @@ impl<T> AsExpression<T> for ExpressionHandle<T> {
         Ok(self.clone())
     }
 }
-
-/*
-pub trait FromExpression<T: ?Sized>: Sized {
-    fn from_expression(handle: ExpressionHandle<T>) -> Result<Self, BuilderError>;
-}
-
-impl<T: ?Sized> FromExpression<T> for ExpressionHandle<T> {
-    fn from_expression(handle: ExpressionHandle<T>) -> Result<Self, BuilderError> {
-        Ok(handle)
-    }
-}
-
-pub trait IntoExpression<T: ?Sized> {
-    fn into_expression(self) -> ExpressionHandle<T>;
-}
-
-impl<T: ?Sized> IntoExpression<T> for ExpressionHandle<T> {
-    fn into_expression(self) -> ExpressionHandle<T> {
-        self
-    }
-}
-*/

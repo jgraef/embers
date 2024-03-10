@@ -94,7 +94,7 @@ where
         base: ExpressionHandle<Self>,
     ) -> Result<Self::Result, BuilderError> {
         let expr = base
-            .get_handle()
+            .get_naga()
             .map(|base| {
                 block_builder
                     .function_builder

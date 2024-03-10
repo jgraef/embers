@@ -1,5 +1,8 @@
 use std::{
-    any::TypeId,
+    any::{
+        type_name,
+        TypeId,
+    },
     collections::HashMap,
 };
 
@@ -38,12 +41,12 @@ pub struct Module {
     pub naga: naga::Module,
 }
 
-#[derive(Debug)]
 pub struct ModuleBuilder {
     pub(super) by_type_id: HashMap<TypeId, TypeHandle>,
     pub(super) types: UniqueArena<Type>,
     pub(super) struct_fields: HashMap<TypeId, Vec<Option<u32>>>,
     pub(super) functions: Arena<Function>,
+    function_generators: HashMap<TypeId, Box<dyn GenerateFunction>>,
     entry_points: Vec<EntryPoint>,
     global_variables: Arena<naga::GlobalVariable>,
     global_variable_by_type_id: HashMap<String, GlobalVariableHandle>,
@@ -57,6 +60,7 @@ impl Default for ModuleBuilder {
             types: Default::default(),
             struct_fields: Default::default(),
             functions: Default::default(),
+            function_generators: Default::default(),
             entry_points: vec![],
             global_variables: Default::default(),
             global_variable_by_type_id: Default::default(),
@@ -108,31 +112,43 @@ impl ModuleBuilder {
         }
     }
 
-    pub fn get_func_by_id_or_add_it<G: GenerateFunction>(
+    pub fn add_function<G: GenerateFunction>(
         &mut self,
-        gen: &G,
+        func_id: TypeId,
+        generator: G,
     ) -> Result<TypeHandle, BuilderError> {
-        let type_id = TypeId::of::<G>();
-        if let Some(handle) = self.by_type_id.get(&type_id) {
+        if let Some(handle) = self.by_type_id.get(&func_id) {
             Ok(*handle)
         }
         else {
             let mut function_builder = FunctionBuilder::new(self, false);
-            gen.generate(&mut function_builder)?;
+            generator.generate_function(&mut function_builder)?;
 
             let (function, captures) = function_builder.build()?;
             assert!(captures.is_none());
             let handle = self.functions.append(function, Default::default());
             let handle = handle.into();
 
-            self.by_type_id.insert(type_id, handle);
+            self.by_type_id.insert(func_id, handle);
+            self.function_generators
+                .insert(func_id, Box::new(generator));
+
             Ok(handle)
         }
     }
 
+    pub fn get_type<T: 'static>(&mut self) -> Result<TypeHandle, BuilderError> {
+        let type_id = TypeId::of::<T>();
+        self.by_type_id.get(&type_id).copied().ok_or_else(|| {
+            BuilderError::TypeNotFound {
+                name: type_name::<T>().to_owned(),
+            }
+        })
+    }
+
     pub fn add_entrypoint<G: GenerateFunction>(&mut self, gen: G) -> Result<(), BuilderError> {
         let mut function_builder = FunctionBuilder::new(self, false);
-        gen.generate(&mut function_builder)?;
+        gen.generate_function(&mut function_builder)?;
 
         let name = function_builder.name.clone();
         let (function, captures) = function_builder.build()?;
@@ -152,10 +168,9 @@ impl ModuleBuilder {
 
     pub fn get_global_variable_or_add_it<T: ShaderType + ?Sized, A: AddressSpace>(
         &mut self,
-        name: impl Into<String>,
+        name: String,
         binding: Option<ResourceBinding>,
     ) -> Result<GlobalVariable<T, A>, BuilderError> {
-        let name = name.into();
         if let Some(handle) = self.global_variable_by_type_id.get(&name) {
             Ok(GlobalVariable::new(*handle))
         }
@@ -213,16 +228,16 @@ impl ModuleBuilder {
 
     pub fn create_closure<C: 'static, G: GenerateFunction>(
         &mut self,
-        gen: &G,
+        generator: G,
     ) -> Result<(TypeHandle, Option<Captures>), BuilderError> {
-        let type_id = TypeId::of::<C>();
+        /*let type_id = TypeId::of::<C>();
         assert!(
             !self.by_type_id.contains_key(&type_id),
             "closure type was already registered"
         );
 
         let mut function_builder = FunctionBuilder::new(self, true);
-        gen.generate(&mut function_builder)?;
+        gen.generate_function(&mut function_builder)?;
 
         let (function, captures) = function_builder.build()?;
         let func_handle = self.functions.append(function, Default::default());
@@ -232,7 +247,10 @@ impl ModuleBuilder {
         };
 
         self.by_type_id.insert(type_id, handle);
-        Ok((handle, captures))
+        Ok((handle, captures))*/
+
+        // this can be merged with add_function
+        todo!()
     }
 
     pub fn scope_id(&mut self) -> ScopeId {

@@ -20,7 +20,10 @@ use super::{
     },
     r#type::TypeHandle,
 };
-use crate::__private::ExpressionHandle;
+use crate::__private::{
+    AsExpression,
+    ExpressionHandle,
+};
 
 struct Closure<Body, Args, Output> {
     /// the type depends on Body so that it's unique, even if Args and Output
@@ -73,21 +76,3 @@ pub(super) fn create_closure<
     Ok(expr)
 }
  */
-
-pub struct ClosureBodyGenerator<B> {
-    body: B,
-}
-
-impl<B: Fn(&mut FunctionBuilder) -> Result<(), BuilderError> + 'static> GenerateFunction
-    for ClosureBodyGenerator<B>
-{
-    fn generate(&self, function_builder: &mut FunctionBuilder) -> Result<(), BuilderError> {
-        (self.body)(function_builder)?;
-        Ok(())
-    }
-}
-
-pub struct ClosureCallGenerator<C> {
-    call: C,
-    captures: Captures,
-}

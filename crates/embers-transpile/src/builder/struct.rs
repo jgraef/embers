@@ -27,7 +27,7 @@ use super::{
     },
 };
 
-pub trait Compose {
+pub trait Compose: Sized {
     fn compose(
         &self,
         block_builder: &mut BlockBuilder,
@@ -42,7 +42,7 @@ impl<const INDEX: u32> FieldAccessor for UnnamedFieldAccessor<{ INDEX }> {}
 pub struct NamedFieldAccessor<const NAME: &'static str>;
 impl<const NAME: &'static str> FieldAccessor for NamedFieldAccessor<{ NAME }> {}
 
-pub trait FieldAccess<F: FieldAccessor> {
+pub trait FieldAccess<F: FieldAccessor>: Sized {
     type Type;
     type Result: AsExpression<Self::Type>;
 
@@ -177,7 +177,7 @@ pub fn access_struct_field<T: ShaderType, U: ShaderType>(
         .struct_fields
         .get(&base.type_id());
 
-    let base = base.get_handle();
+    let base = base.get_naga();
 
     let handle = match (field_map, base) {
         (Some(field_map), Some(base)) => {
