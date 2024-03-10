@@ -301,7 +301,7 @@ fn process_function(
 
         if let Input::Receiver { .. } = input {
             rebind_self = Some(quote! {
-                let #name = self.into_argument();
+                let #name = ::embers_transpile::__private::MaybeSelf::into_argument(self);
             });
         }
 
@@ -322,7 +322,7 @@ fn process_function(
 
             // fixme: if it's a global it might be a pointer type
             entrypoint_create_args.push(quote! {
-                let #name = ::embers_transpile::__private::Argument::<#ty>::new();
+                let #name = <::embers_transpile::__private::Argument::<#ty> as ::embers_transpile::__private::std::default::Default>::default();
             });
         }
 
@@ -376,6 +376,7 @@ fn process_function(
                 _args.push(_function_builder.add_input(#name_expr, #name, false, #binding_expr)?.as_dyn());
             });
 
+            // todo: if the arg is mut, we need to create a variable for it.
             bind_args.push(quote!{
                 let #name = ::embers_transpile::__private::ExpressionHandle::from_arg(#name, _args[#arg_index], _block_builder)?;
             });
@@ -384,13 +385,21 @@ fn process_function(
         }
     }
 
+    // generate function body
+    let mut body = TokenBuffer::default();
+    let output_expr = process_block(block, &mut body, name_gen)?;
+
+    // generate the expression that returns a Return<Output> (the function
+    // generator)
     let create_function = quote! {
         #rebind_self
         ::embers_transpile::__private::return_function_with_closure(
             (#args_as_expression_handles), // we pass this so the return_function_with_closure can infer the type for Args
-            move |_block_builder, _args| {
+            move |mut _block_builder, _args| {
                 #bind_args
-                todo!();
+                #body
+                let _output = ::embers_transpile::__private::AsExpression::as_expression(&#output_expr, _block_builder)?;
+                Ok(_output.as_dyn())
             },
             move |_function_builder, _body_generator| {
                 _function_builder.add_name(#func_name_lit);
@@ -463,7 +472,7 @@ impl Input {
 
     pub fn name_expression(&self) -> TokenStream {
         match self {
-            Input::Receiver { pointer } => {
+            Input::Receiver { .. } => {
                 quote! {::embers_transpile::__private::Some("self".to_owned())}
             }
             Input::Plain { name, .. } => {
@@ -477,16 +486,8 @@ impl Input {
     pub fn ident(&self) -> Ident {
         match self {
             Input::Receiver { .. } => Ident::new("_self", Span::call_site()),
-            Input::Plain {
-                name,
-                ty,
-                entry_point_attrs,
-            } => name.clone(),
-            Input::Wild {
-                assigned_name,
-                ty,
-                entry_point_attrs,
-            } => assigned_name.clone(),
+            Input::Plain { name, .. } => name.clone(),
+            Input::Wild { assigned_name, .. } => assigned_name.clone(),
         }
     }
 
@@ -885,27 +886,42 @@ pub fn implicit_unit(
     })
 }
 
-pub fn process_block_inner(
+pub fn process_block(
     input: &Block,
     output: &mut TokenBuffer,
     name_gen: &mut NameGen,
 ) -> Result<ExprOut, Error> {
     let mut result = None;
 
+    let mut block = TokenBuffer::default();
+
     for stmt in &input.stmts {
-        result = Some(process_stmt(stmt, output, name_gen)?);
+        result = process_stmt(stmt, &mut block, name_gen)?;
     }
 
-    let result = implicit_unit(result, output, name_gen);
+    // return output from last statement
+    if let Some(result) = result {
+        block.push(result);
+    }
+    else {
+        block.push(quote!{ ::embers_transpile::__private::ExpressionHandle::<::embers_transpile::__private::Unit>::empty() })
+    }
 
-    Ok(result)
+    let var = name_gen.tmp_var("block");
+    output.push(quote! {
+        let #var = {
+            #block
+        };
+    });
+
+    Ok(var.into())
 }
 
 fn process_stmt(
     input: &Stmt,
     output: &mut TokenBuffer,
     name_gen: &mut NameGen,
-) -> Result<ExprOut, Error> {
+) -> Result<Option<ExprOut>, Error> {
     let result = match input {
         Stmt::Local(local) => {
             let rhs = if let Some(rhs) = &local.init {
@@ -950,12 +966,12 @@ fn process_stmt(
                     if let Some(rhs) = &rhs {
                         output.push(quote! {
                             _block_builder.function_builder.name_expression(#ident_literal, #rhs.clone())?;
-                             let #ident = ::embers_transpile::__private::LetBinding::<#lhs_ty>::from_expr(#rhs);
+                             let #ident = ::embers_transpile::__private::LetBinding::<#lhs_ty>::from_expr(#rhs, _block_builder.function_builder.scope_id());
                         });
                     }
                     else {
                         output.push(
-                            quote! { let #ident = ::embers_transpile::__private::LetBinding::<#lhs_ty>::unbound(); },
+                            quote! { let #ident = ::embers_transpile::__private::LetBinding::<#lhs_ty>::unbound(_block_builder.function_builder.scope_id()); },
                         );
                     }
                 }
@@ -974,8 +990,6 @@ fn process_stmt(
         }
         Stmt::Macro(macro_) => Some(process_macro(&macro_.mac, output, name_gen)?),
     };
-
-    let result = implicit_unit(result, output, name_gen);
 
     Ok(result)
 }

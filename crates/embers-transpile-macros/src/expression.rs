@@ -197,15 +197,7 @@ pub fn process_expr(
             assert!(block.label.is_none());
             let mut block_output = TokenBuffer::default();
             let var = name_gen.tmp_var("block");
-            let block_result =
-                crate::function::process_block_inner(&block.block, &mut block_output, name_gen)?;
-            output.push(quote! {
-                let #var = {
-                    #block_output
-                    #block_result
-                };
-            });
-            var.into()
+            crate::function::process_block(&block.block, &mut block_output, name_gen)?
         }
         Expr::Break(_brk) => todo!("process_expr -> Expr::Break"),
         Expr::Call(call) => {

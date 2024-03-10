@@ -56,13 +56,7 @@ use super::{
         ScopeId,
     },
 };
-use crate::{
-    shader_std::marker::TupleOfExpressionHandles,
-    utils::{
-        sealed::Sealed,
-        try_all,
-    },
-};
+use crate::utils::{self, try_all};
 
 // todo: add trait bound for Args: TupleOfExpressionHandles
 pub trait FunctionTrait<Args>: Sized {
@@ -103,7 +97,8 @@ impl<T: GenerateFunction + ?Sized> GenerateFunction for Box<T> {
     }
 }
 
-pub struct FunctionType<Args, Output, Generator> {
+pub struct FunctionType<Args, Output, Generator, SelfKind = NoSelf> {
+    _self: PhantomData<SelfKind>,
     _args: PhantomData<Args>,
     _output: PhantomData<Output>,
     _generator: PhantomData<Generator>,
@@ -112,6 +107,7 @@ pub struct FunctionType<Args, Output, Generator> {
 impl<Args, Output, Generator> FunctionType<Args, Output, Generator> {
     pub fn new(_: &Args, _: &ExpressionHandle<Output>, _: &Generator) -> Self {
         Self {
+            _self: PhantomData,
             _args: PhantomData,
             _output: PhantomData,
             _generator: PhantomData,
@@ -119,17 +115,28 @@ impl<Args, Output, Generator> FunctionType<Args, Output, Generator> {
     }
 }
 
+
+pub trait MaybeSelf: Default {
+    type Inner;
+
+    fn into_argument(self) -> Argument<Self::Inner>;
+}
+
+pub enum NoSelf {}
+
 pub struct Argument<T: ?Sized> {
     _type: PhantomData<T>,
 }
 
-impl<T: ?Sized> Argument<T> {
-    pub fn new() -> Self {
+impl<T: ?Sized> Default for Argument<T> {
+    fn default() -> Self {
         Self { _type: PhantomData }
     }
+}
 
+impl<T: ?Sized> Argument<T> {
     pub fn from_expression_handle(_: ExpressionHandle<T>) -> Self {
-        Self::new()
+        Self::default()
     }
 
     pub fn as_empty_expression_handle(&self) -> ExpressionHandle<T> {
@@ -139,23 +146,34 @@ impl<T: ?Sized> Argument<T> {
 
 impl<T: ?Sized> Clone for Argument<T> {
     fn clone(&self) -> Self {
-        Self::new()
+        Self::default()
     }
 }
 
 impl<T: ?Sized> Copy for Argument<T> {}
 
+
+impl<T> MaybeSelf for Argument<T> {
+    type Inner = T;
+
+    fn into_argument(self) -> Argument<T> {
+        self
+    }
+}
+
 pub struct SelfArgument<T: ?Sized> {
     arg: Argument<T>,
+}
+
+impl<T: ?Sized> Default for SelfArgument<T> {
+    fn default() -> Self {
+        Self::from_argument(Default::default())
+    }
 }
 
 impl<T: ?Sized> SelfArgument<T> {
     pub fn from_argument(arg: Argument<T>) -> Self {
         Self { arg }
-    }
-
-    pub fn into_argument(self) -> Argument<T> {
-        self.arg
     }
 
     pub fn as_empty_expression_handle(&self) -> ExpressionHandle<T> {
@@ -181,8 +199,24 @@ impl<T: ?Sized> Clone for SelfArgument<T> {
 
 impl<T: ?Sized> Copy for SelfArgument<T> {}
 
+
+
+impl<T> MaybeSelf for SelfArgument<T> {
+    type Inner = T;
+
+    fn into_argument(self) -> Argument<T> {
+        self.arg
+    }
+}
+
 pub struct SelfPointerArgument<T: ?Sized, A> {
     arg: Argument<Pointer<T, A>>,
+}
+
+impl<T: ?Sized, A> Default for SelfPointerArgument<T, A> {
+    fn default() -> Self {
+        Self::from_argument(Default::default())
+    }
 }
 
 impl<T: ?Sized, A> SelfPointerArgument<T, A> {
@@ -199,7 +233,7 @@ impl<T: ?Sized, A> SelfPointerArgument<T, A> {
     }
 }
 
-impl<T: ?Sized, A: AddressSpace> Deref for SelfPointerArgument<T, A> {
+impl<T: ?Sized, A> Deref for SelfPointerArgument<T, A> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -217,10 +251,19 @@ impl<T: ?Sized, A> Clone for SelfPointerArgument<T, A> {
 
 impl<T: ?Sized, A> Copy for SelfPointerArgument<T, A> {}
 
+impl<T, A> MaybeSelf for SelfPointerArgument<T, A> {
+    type Inner = Pointer<T, A>;
+
+    fn into_argument(self) -> Argument<Pointer<T, A>> {
+        self.arg
+    }
+
+}
+
 pub struct Return<R: ?Sized> {
     pub generator: Box<dyn GenerateFunction>,
-    return_type: PhantomData<R>,
-    func_id: TypeId,
+    pub return_type: PhantomData<R>,
+    pub func_id: TypeId,
 }
 
 pub fn return_function_with_generator<
@@ -283,93 +326,10 @@ pub fn return_function_with_closure<
     return_function_with_generator(args, G { body, func })
 }
 
-impl<
-        A1: 'static,
-        A2: 'static,
-        R: 'static,
-        F: Fn(Argument<A1>, Argument<A2>) -> Return<R>,
-        G: GenerateFunction,
-    > AsExpression<FunctionType<(A1, A2), R, G>> for F
-{
-    fn as_expression(
-        &self,
-        block_builder: &mut BlockBuilder,
-    ) -> Result<ExpressionHandle<FunctionType<(A1, A2), R, G>>, BuilderError> {
-        let Return {
-            generator, func_id, ..
-        } = self(Argument::new().into(), Argument::new());
-        block_builder
-            .function_builder
-            .module_builder
-            .add_function(func_id, generator)?;
-        Ok(ExpressionHandle::empty())
-    }
-}
-
-impl<A1: 'static, A2: 'static, R: 'static, G: 'static>
-    FunctionTrait<(ExpressionHandle<A1>, ExpressionHandle<A2>)> for FunctionType<(A1, A2), R, G>
-{
-    type Output = R;
-
-    fn call(
-        func: ExpressionHandle<Self>,
-        args: (ExpressionHandle<A1>, ExpressionHandle<A2>),
-        block_builder: &mut BlockBuilder,
-    ) -> Result<ExpressionHandle<Self::Output>, BuilderError> {
-        let func = block_builder
-            .function_builder
-            .module_builder
-            .get_type::<Self>()?
-            .try_get_code()?;
-        generate_call::<R>(
-            block_builder,
-            func,
-            [args.0.get_naga(), args.1.get_naga()]
-                .into_iter()
-                .flatten()
-                .collect(),
-        )
-    }
-}
-
-fn generate_method_call<R: 'static>(
-    block_builder: &mut BlockBuilder,
-    method: Return<R>,
-    arguments: Vec<Handle<Expression>>,
-) -> Result<ExpressionHandle<R>, BuilderError> {
-    let func = block_builder
-        .function_builder
-        .module_builder
-        .add_function(method.func_id, method.generator)?;
-    generate_call::<R>(block_builder, func.try_get_code()?, arguments)
-}
-
-fn generate_call<R: 'static>(
-    block_builder: &mut BlockBuilder,
-    naga_func: Handle<Function>,
-    arguments: Vec<Handle<Expression>>,
-) -> Result<ExpressionHandle<R>, BuilderError> {
-    let ret_type = block_builder
-        .function_builder
-        .module_builder
-        .get_type::<R>()?;
-
-    let ret = if ret_type.is_zero_sized() {
-        ExpressionHandle::<R>::empty()
-    }
-    else {
-        block_builder
-            .function_builder
-            .add_expression::<R>(Expression::CallResult(naga_func))?
-    };
-
-    block_builder.add_statement(Statement::Call {
-        function: naga_func,
-        arguments,
-        result: ret.get_naga(),
-    })?;
-
-    Ok(ret)
+mod func_impls {
+    // generate impls AsExpression and FunctionTrait for functions Fn(Argument<_>, ...) -> Return<_>
+    // this is in a separate mod so that we can easily expand it
+    embers_transpile_macros::impl_functions!(32);
 }
 
 pub struct FunctionBuilder<'m> {
@@ -757,6 +717,10 @@ impl<'m> FunctionBuilder<'m> {
             }
         };
         Ok(expression)
+    }
+
+    pub fn scope_id(&self) -> ScopeId {
+        self.scope
     }
 }
 

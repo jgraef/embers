@@ -42,4 +42,4 @@ impl<T: 'static> crate::shader_std::default::Default for PhantomData<T> {
 }
 
 pub trait TupleOfExpressionHandles: Sealed {}
-//embers_transpile_macros::impl_tuple_of_expression_handles!(8);
+embers_transpile_macros::impl_tuple_of_expression_handles!(32);

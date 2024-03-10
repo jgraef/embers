@@ -39,6 +39,7 @@ pub use crate::{
             Return,
             SelfArgument,
             SelfPointerArgument,
+            MaybeSelf,
         },
         literal::{
             AnyFloat,

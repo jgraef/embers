@@ -23,7 +23,7 @@ pub struct DynamicArray<T> {
 impl<T: ShaderType + Width> DynamicArray<T> {
     pub fn len(&self) -> shader_u32 {
         ::embers_transpile::__private::intrinsic! {
-            let expr = crate::__private::AsExpression::as_expression(&_self, block_builder)?.try_get_handle()?;
+            let expr = crate::__private::AsExpression::as_expression(&_self, block_builder)?.try_get_naga()?;
             block_builder.function_builder.add_expression::<shader_u32>(crate::__private::naga::Expression::ArrayLength(expr))?
         }
     }

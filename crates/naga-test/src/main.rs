@@ -2,6 +2,7 @@
 mod scratch;
 
 use std::{
+    any::type_name,
     fmt::Debug,
     marker::PhantomData,
 };
@@ -159,8 +160,15 @@ mod shader {
 */
 #[transpile]
 mod test {
+    fn foo(a: u32, b: u32) -> u32 {
+        a
+    }
+
     #[transpile(entrypoint)]
-    pub fn test() {}
+    pub fn test(#[transpile(builtin(global_invocation_id))] global_id: vec3<u32>) {
+        //let x = 42u32 + global_id.x;
+        //foo(1, 2);
+    }
 }
 
 fn main() -> Result<(), Error> {
