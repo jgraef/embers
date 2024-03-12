@@ -56,17 +56,38 @@ use super::{
         ScopeId,
     },
 };
-use crate::utils::{self, try_all};
+use crate::{
+    shader_std::{
+        marker::TupleOfExpressionHandles,
+        types::Unit,
+    },
+    utils::{
+        self,
+        try_all,
+    },
+    Module,
+};
 
 // todo: add trait bound for Args: TupleOfExpressionHandles
-pub trait FunctionTrait<Args>: Sized {
+pub trait FunctionTrait: Sized {
+    type Args: TupleOfExpressionHandles;
     type Output;
 
     fn call(
         func: ExpressionHandle<Self>,
-        args: Args,
+        args: Self::Args,
         block_builder: &mut BlockBuilder,
     ) -> Result<ExpressionHandle<Self::Output>, BuilderError>;
+}
+
+impl<F: FunctionTrait> ExpressionHandle<F> {
+    pub fn call(
+        &self,
+        args: F::Args,
+        block_builder: &mut BlockBuilder,
+    ) -> Result<ExpressionHandle<F::Output>, BuilderError> {
+        F::call(*self, args, block_builder)
+    }
 }
 
 pub trait GenerateFunction: 'static {
@@ -80,7 +101,7 @@ pub trait GenerateFunction: 'static {
         -> Result<(), BuilderError>;
 }
 
-impl<T: GenerateFunction + ?Sized> GenerateFunction for Box<T> {
+/*impl<T: GenerateFunction + ?Sized> GenerateFunction for Box<T> {
     fn generate_body(
         &self,
         block_builder: &mut BlockBuilder,
@@ -113,8 +134,7 @@ impl<Args, Output, Generator> FunctionType<Args, Output, Generator> {
             _generator: PhantomData,
         }
     }
-}
-
+}*/
 
 pub trait MaybeSelf: Default {
     type Inner;
@@ -151,7 +171,6 @@ impl<T: ?Sized> Clone for Argument<T> {
 }
 
 impl<T: ?Sized> Copy for Argument<T> {}
-
 
 impl<T> MaybeSelf for Argument<T> {
     type Inner = T;
@@ -198,8 +217,6 @@ impl<T: ?Sized> Clone for SelfArgument<T> {
 }
 
 impl<T: ?Sized> Copy for SelfArgument<T> {}
-
-
 
 impl<T> MaybeSelf for SelfArgument<T> {
     type Inner = T;
@@ -257,9 +274,111 @@ impl<T, A> MaybeSelf for SelfPointerArgument<T, A> {
     fn into_argument(self) -> Argument<Pointer<T, A>> {
         self.arg
     }
-
 }
 
+pub trait FnItem {
+    type FunctionType: ?Sized;
+    type Output: ?Sized;
+
+    /// The job of this function is to register the function type and return an
+    /// expression for it.
+    fn get_function_expression(
+        self,
+        module_builder: &mut ModuleBuilder,
+    ) -> Result<ExpressionHandle<Self::FunctionType>, BuilderError>;
+}
+
+pub trait FnItemEntryPoint: FnItem<Output = Unit> {
+    fn register_entrypoint(self, module_builder: &mut ModuleBuilder) -> Result<(), BuilderError>;
+}
+
+pub struct CallbackGenerator<B, F> {
+    pub body_generator: B,
+    pub function_generator: F,
+}
+
+impl<
+        B: Fn(
+                &mut BlockBuilder,
+                Vec<DynFnInputBinding>,
+            ) -> Result<DynExpressionHandle, BuilderError>
+            + 'static,
+        F: Fn(&mut FunctionBuilder, &B) -> Result<(), BuilderError> + 'static,
+    > CallbackGenerator<B, F>
+{
+    pub fn new(body_generator: B, function_generator: F) -> Self {
+        Self {
+            body_generator,
+            function_generator,
+        }
+    }
+}
+
+impl<
+        B: Fn(
+                &mut BlockBuilder,
+                Vec<DynFnInputBinding>,
+            ) -> Result<DynExpressionHandle, BuilderError>
+            + 'static,
+        F: Fn(&mut FunctionBuilder, &B) -> Result<(), BuilderError> + 'static,
+    > GenerateFunction for CallbackGenerator<B, F>
+{
+    fn generate_body(
+        &self,
+        block_builder: &mut BlockBuilder,
+        args: Vec<DynFnInputBinding>,
+    ) -> Result<DynExpressionHandle, BuilderError> {
+        (self.body_generator)(block_builder, args)
+    }
+
+    fn generate_function(
+        &self,
+        function_builder: &mut FunctionBuilder,
+    ) -> Result<(), BuilderError> {
+        (self.function_generator)(function_builder, &self.body_generator)
+    }
+}
+
+pub struct GeneratorFnItem<T: ?Sized, G> {
+    generator: G,
+    _type: PhantomData<T>,
+}
+
+impl<T: ?Sized, G> GeneratorFnItem<T, G> {
+    pub fn new(generator: G) -> Self {
+        Self {
+            generator,
+            _type: PhantomData,
+        }
+    }
+
+    pub fn new_with_type(_: &T, generator: G) -> Self {
+        Self::new(generator)
+    }
+}
+
+impl<T: FunctionTrait + ?Sized + 'static, G: GenerateFunction> FnItem for GeneratorFnItem<T, G> {
+    type FunctionType = T;
+    type Output = <T as FunctionTrait>::Output;
+
+    fn get_function_expression(
+        self,
+        module_builder: &mut ModuleBuilder,
+    ) -> Result<ExpressionHandle<Self::FunctionType>, BuilderError> {
+        module_builder.add_function::<T>(Box::new(self.generator))?;
+        Ok(ExpressionHandle::empty())
+    }
+}
+
+impl<T: FunctionTrait<Output = Unit> + ?Sized + 'static, G: GenerateFunction> FnItemEntryPoint
+    for GeneratorFnItem<T, G>
+{
+    fn register_entrypoint(self, module_builder: &mut ModuleBuilder) -> Result<(), BuilderError> {
+        module_builder.add_entrypoint(self.generator)
+    }
+}
+
+/*
 pub struct Return<R: ?Sized> {
     pub generator: Box<dyn GenerateFunction>,
     pub return_type: PhantomData<R>,
@@ -325,11 +444,12 @@ pub fn return_function_with_closure<
 
     return_function_with_generator(args, G { body, func })
 }
-
+ */
 mod func_impls {
-    // generate impls AsExpression and FunctionTrait for functions Fn(Argument<_>, ...) -> Return<_>
-    // this is in a separate mod so that we can easily expand it
-    embers_transpile_macros::impl_functions!(32);
+    // generate impls AsExpression and FunctionTrait for functions Fn(Argument<_>,
+    // ...) -> Return<_> this is in a separate mod so that we can easily expand
+    // it
+    embers_transpile_macros::impl_functions!(1);
 }
 
 pub struct FunctionBuilder<'m> {

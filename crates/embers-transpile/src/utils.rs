@@ -13,6 +13,16 @@ pub fn try_all<I: IntoIterator<Item = Result<bool, E>>, E>(iter: I) -> Result<bo
     Ok(true)
 }
 
-pub(crate) mod sealed {
-    pub trait Sealed {}
+macro_rules! sealed_trait {
+    ($mod_name:ident :: $trait_name:ident) => {
+        mod $mod_name {
+            pub trait $trait_name {}
+        }
+    };
+    () => {
+        crate::utils::sealed_trait!(sealed::Sealed);
+        use sealed::Sealed;
+    };
 }
+
+pub(crate) use sealed_trait;

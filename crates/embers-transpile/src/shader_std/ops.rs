@@ -1,6 +1,6 @@
 use embers_transpile_macros::transpile;
 
-use crate::ShaderType;
+use crate::builder::r#type::ShaderType;
 
 macro_rules! unary_trait {
     ($name:ident, $method:ident) => {

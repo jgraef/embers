@@ -1,14 +1,14 @@
 use embers_transpile_macros::transpile;
 
 use crate::{
+    builder::r#type::{
+        AlignTo,
+        ShaderType,
+        Width,
+    },
     shader_std::{
         default::Default,
         types::primitive::bool,
-    },
-    ShaderType,
-    __private::{
-        AlignTo,
-        Width,
     },
 };
 

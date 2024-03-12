@@ -27,19 +27,22 @@ pub use crate::{
         error::BuilderError,
         expression::{
             AsExpression,
+            DynExpressionHandle,
             ExpressionHandle,
         },
         function::{
-            return_function_with_closure,
             Argument,
+            CallbackGenerator,
+            DynFnInputBinding,
+            FnItem,
+            FnItemEntryPoint,
             FunctionBuilder,
             FunctionTrait,
-            FunctionType,
             GenerateFunction,
-            Return,
+            GeneratorFnItem,
+            MaybeSelf,
             SelfArgument,
             SelfPointerArgument,
-            MaybeSelf,
         },
         literal::{
             AnyFloat,
@@ -79,6 +82,7 @@ pub use crate::{
     },
     shader_std::{
         self,
+        marker::TupleOfExpressionHandles,
         types::{
             array::{
                 Array,

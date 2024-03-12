@@ -9,9 +9,11 @@ use std::{
 
 use color_eyre::eyre::Error;
 use embers_transpile::{
-    builder::function::FunctionBuilder,
+    builder::{
+        function::FunctionBuilder,
+        r#type::ShaderType,
+    },
     transpile,
-    ShaderType,
 };
 use itertools::Itertools;
 use naga::{
@@ -167,7 +169,7 @@ mod test {
     #[transpile(entrypoint)]
     pub fn test(#[transpile(builtin(global_invocation_id))] global_id: vec3<u32>) {
         //let x = 42u32 + global_id.x;
-        //foo(1, 2);
+        //foo(1u32, 2u32);
     }
 }
 

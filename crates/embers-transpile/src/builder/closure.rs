@@ -20,11 +20,15 @@ use super::{
     },
     r#type::TypeHandle,
 };
-use crate::__private::{
-    AsExpression,
-    ExpressionHandle,
+use crate::{
+    __private::{
+        AsExpression,
+        ExpressionHandle,
+    },
+    shader_std::marker::TupleOfExpressionHandles,
 };
 
+/*
 struct Closure<Body, Args, Output> {
     /// the type depends on Body so that it's unique, even if Args and Output
     /// are the same as another closures'
@@ -33,11 +37,9 @@ struct Closure<Body, Args, Output> {
     _output: PhantomData<Output>,
 }
 
-trait FunctionArguments {
-    fn as_raw_expression_handles(&self) -> Vec<Handle<Expression>>;
-}
-
-impl<Body, Args: FunctionArguments, Output> FunctionTrait<Args> for Closure<Body, Args, Output> {
+impl<Body, , Output> FunctionTrait<Args>
+    for Closure<Body, Args, Output>
+{
     type Output = Output;
 
     fn call(
@@ -49,7 +51,6 @@ impl<Body, Args: FunctionArguments, Output> FunctionTrait<Args> for Closure<Body
     }
 }
 
-/*
 pub(super) fn create_closure<
     Body: Fn(&mut FunctionBuilder) -> Result<(), BuilderError> + 'static,
     Args,

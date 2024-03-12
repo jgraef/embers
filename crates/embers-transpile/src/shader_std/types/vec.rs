@@ -19,6 +19,7 @@ use crate::{
             AlignTo,
             Name,
             ScalarKind,
+            ShaderType,
             TypeHandle,
             Width,
         },
@@ -27,7 +28,6 @@ use crate::{
         Assert,
         IsTrue,
     },
-    ShaderType,
 };
 
 // todo: make sure we restrict useful instantiations of vec and mat for types

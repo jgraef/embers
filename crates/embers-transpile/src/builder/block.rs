@@ -1,11 +1,18 @@
 use naga::{
-    Block, Expression, Function, Handle, Statement
+    Block,
+    Expression,
+    Function,
+    Handle,
+    Statement,
 };
 
 use super::{
     error::BuilderError,
-    expression::{DynExpressionHandle, ExpressionHandle},
-    function::{FunctionBuilder, Return},
+    expression::{
+        DynExpressionHandle,
+        ExpressionHandle,
+    },
+    function::FunctionBuilder,
     r#type::{
         ShaderType,
         TypeHandle,
@@ -38,6 +45,7 @@ impl<'m, 'f> BlockBuilder<'m, 'f> {
         Ok(())
     }
 
+    /*
     pub fn add_method_call<R: 'static>(
         &mut self,
         method: Return<R>,
@@ -49,27 +57,27 @@ impl<'m, 'f> BlockBuilder<'m, 'f> {
             .add_function(method.func_id, method.generator)?;
         self.add_call::<R>(func.try_get_code()?, arguments)
     }
+    */
 
     pub fn add_call<R: 'static>(
         &mut self,
         naga_func: Handle<Function>,
         arguments: impl IntoIterator<Item = DynExpressionHandle>,
     ) -> Result<ExpressionHandle<R>, BuilderError> {
-        let ret_type = self
-            .function_builder
-            .module_builder
-            .get_type::<R>()?;
+        let ret_type = self.function_builder.module_builder.get_type::<R>()?;
 
         let ret = if ret_type.is_zero_sized() {
             ExpressionHandle::<R>::empty()
         }
         else {
-            self
-                .function_builder
+            self.function_builder
                 .add_expression::<R>(Expression::CallResult(naga_func))?
         };
 
-        let arguments = arguments.into_iter().filter_map(|dyn_handle| dyn_handle.get_naga()).collect();
+        let arguments = arguments
+            .into_iter()
+            .filter_map(|dyn_handle| dyn_handle.get_naga())
+            .collect();
 
         self.add_statement(Statement::Call {
             function: naga_func,
@@ -79,7 +87,6 @@ impl<'m, 'f> BlockBuilder<'m, 'f> {
 
         Ok(ret)
     }
-
 
     fn finish_inner(self) -> (Block, &'f mut FunctionBuilder<'m>) {
         (Block::from_vec(self.statements), self.function_builder)

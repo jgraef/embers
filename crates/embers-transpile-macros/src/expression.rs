@@ -7,6 +7,7 @@ use quote::{
     ToTokens,
 };
 use syn::{
+    spanned::Spanned,
     BinOp,
     Expr,
     Ident,
@@ -202,13 +203,27 @@ pub fn process_expr(
         Expr::Break(_brk) => todo!("process_expr -> Expr::Break"),
         Expr::Call(call) => {
             let func = &call.func;
-            let func = process_expr(func, output, name_gen)?;
-            let mut func_args = vec![];
+            let func_var = process_expr(func, output, name_gen)?;
+            output.push(quote!{
+                let #func_var = embers_transpile::__private::AsExpression::as_expression(&#func, &mut _block_builder)?;
+            });
+
+            let mut arg_vars = vec![];
             for arg in &call.args {
                 let arg = process_expr(arg, output, name_gen)?;
-                func_args.push(arg);
+                let arg_var = name_gen.tmp_var("arg");
+                output.push(quote!{
+                    let #arg_var = embers_transpile::__private::AsExpression::as_expression(&#arg, &mut _block_builder)?;
+                });
+                arg_vars.push(arg_var);
             }
-            emit_func_call_to_expr(output, name_gen, func, &func_args)
+
+            let result_var = name_gen.tmp_var("result");
+            output.push(quote! {
+                let #result_var = #func_var.call((#(#arg_vars,)*), &mut _block_builder)?;
+            });
+
+            result_var.into()
         }
         Expr::Cast(_cast) => todo!("process_expr -> Expr::Cast"),
         Expr::Closure(closure) => crate::closure::process_closure(closure, output, name_gen)?,
@@ -288,16 +303,13 @@ pub fn process_expr(
             process_expr(&paren.expr, output, name_gen)?
         }
         Expr::Path(path) => {
-            // todo: don't emit the IntoExpressionHandle yet. we might want to borrow this
-            // path
-
-            //let var = name_gen.tmp_var("path");
-            //output.push(quote! { let #var =
-            // #private::IntoExpressionHandle::into_expr(#path, _function_builder).unwrap();
-            // }); var.into()
+            // note: don't emit the AsExpression here. we might want to borrow this
+            // path. or if this is a DeferredDereference, we don't want to emit the load
+            // yet. todo: can we handle unit structs here by auto-composing
+            // them?
 
             if path.path.is_ident("self") {
-                Ident::new("_self", Span::call_site()).into()
+                Ident::new("_self", path.span()).into()
             }
             else {
                 path.path.clone().into()

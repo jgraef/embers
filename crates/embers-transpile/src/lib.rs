@@ -14,7 +14,4 @@ pub mod __private;
 
 pub use embers_transpile_macros::transpile;
 
-pub use crate::builder::{
-    module::Module,
-    r#type::ShaderType,
-};
+pub use crate::builder::module::Module;

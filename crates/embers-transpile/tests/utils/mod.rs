@@ -1,15 +1,13 @@
 #![allow(dead_code)]
 
-use embers_transpile::{
-    builder::{
-        module::ModuleBuilder,
-        r#type::{
-            AlignTo,
-            Name,
-            Width,
-        },
+use embers_transpile::builder::{
+    module::ModuleBuilder,
+    r#type::{
+        AlignTo,
+        Name,
+        ShaderType,
+        Width,
     },
-    ShaderType,
 };
 use naga::{
     Module,

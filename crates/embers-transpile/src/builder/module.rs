@@ -112,12 +112,13 @@ impl ModuleBuilder {
         }
     }
 
-    pub fn add_function<G: GenerateFunction>(
+    pub fn add_function<F: ?Sized + 'static>(
         &mut self,
-        func_id: TypeId,
-        generator: G,
+        generator: Box<dyn GenerateFunction>,
     ) -> Result<TypeHandle, BuilderError> {
-        if let Some(handle) = self.by_type_id.get(&func_id) {
+        let type_id = TypeId::of::<F>();
+
+        if let Some(handle) = self.by_type_id.get(&type_id) {
             Ok(*handle)
         }
         else {
@@ -129,9 +130,8 @@ impl ModuleBuilder {
             let handle = self.functions.append(function, Default::default());
             let handle = handle.into();
 
-            self.by_type_id.insert(func_id, handle);
-            self.function_generators
-                .insert(func_id, Box::new(generator));
+            self.by_type_id.insert(type_id, handle);
+            self.function_generators.insert(type_id, generator);
 
             Ok(handle)
         }

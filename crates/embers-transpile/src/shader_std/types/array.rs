@@ -6,25 +6,29 @@ use crate::{
         module::ModuleBuilder,
         r#type::{
             AlignTo,
+            ShaderType,
             TypeHandle,
             Width,
         },
     },
     shader_std::types::primitive::u32 as shader_u32,
     transpile,
-    ShaderType,
 };
 
 pub struct DynamicArray<T> {
     _ty: PhantomData<T>,
 }
 
-#[transpile]
-impl<T: ShaderType + Width> DynamicArray<T> {
-    pub fn len(&self) -> shader_u32 {
-        ::embers_transpile::__private::intrinsic! {
-            let expr = crate::__private::AsExpression::as_expression(&_self, block_builder)?.try_get_naga()?;
-            block_builder.function_builder.add_expression::<shader_u32>(crate::__private::naga::Expression::ArrayLength(expr))?
+pub mod test {
+    use super::*;
+
+    #[transpile]
+    impl<T: ShaderType + Width> DynamicArray<T> {
+        pub fn len(&self) -> shader_u32 {
+            ::embers_transpile::__private::intrinsic! {
+                let expr = crate::__private::AsExpression::as_expression(&_self, block_builder)?.try_get_naga()?;
+                block_builder.function_builder.add_expression::<shader_u32>(crate::__private::naga::Expression::ArrayLength(expr))?
+            }
         }
     }
 }

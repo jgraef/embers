@@ -1,18 +1,16 @@
 use std::marker::PhantomData;
 
-use crate::{
-    builder::{
-        error::BuilderError,
-        module::ModuleBuilder,
-        r#type::{
-            scalar_to_naga,
-            AlignTo,
-            ScalarKind,
-            TypeHandle,
-            Width,
-        },
+use crate::builder::{
+    error::BuilderError,
+    module::ModuleBuilder,
+    r#type::{
+        scalar_to_naga,
+        AlignTo,
+        ScalarKind,
+        ShaderType,
+        TypeHandle,
+        Width,
     },
-    ShaderType,
 };
 
 pub struct Atomic<T> {

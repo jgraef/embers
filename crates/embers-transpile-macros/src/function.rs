@@ -19,6 +19,7 @@ use syn::{
     FnArg,
     Ident,
     ImplItemFn,
+    Index,
     ItemFn,
     Macro,
     Pat,
@@ -389,42 +390,105 @@ fn process_function(
     let mut body = TokenBuffer::default();
     let output_expr = process_block(block, &mut body, name_gen)?;
 
+    // generate function type
+    let arg_indices = inputs.iter().enumerate().map(|(i, _)| Index::from(i));
+    let function_type = quote! {
+        struct AnonymousFunctionType<Args, Output> {
+            _args: ::embers_transpile::__private::std::marker::PhantomData<Args>,
+            _output: ::embers_transpile::__private::std::marker::PhantomData<Output>,
+        }
+
+        impl<Args, Output> AnonymousFunctionType<Args, Output> {
+            pub fn new(_: &Args) -> Self {
+                Self {
+                    _args: ::embers_transpile::__private::std::marker::PhantomData,
+                    _output: ::embers_transpile::__private::std::marker::PhantomData,
+                }
+            }
+        }
+
+        impl<Args: ::embers_transpile::__private::TupleOfExpressionHandles + 'static, Output: 'static> ::embers_transpile::__private::FunctionTrait for AnonymousFunctionType<Args, Output> {
+            type Args = Args;
+            type Output = Output;
+
+            fn call(
+                func: ::embers_transpile::__private::ExpressionHandle<Self>,
+                args: Self::Args,
+                block_builder: &mut ::embers_transpile::__private::BlockBuilder,
+            ) -> ::embers_transpile::__private::Result<
+                ::embers_transpile::__private::ExpressionHandle<Self::Output>,
+                ::embers_transpile::__private::BuilderError
+            > {
+                let naga_func = block_builder
+                    .function_builder
+                    .module_builder
+                    .get_type::<Self>()?
+                    .try_get_code()?;
+                block_builder.add_call::<Output>(
+                    naga_func,
+                    [
+                        //#(args.#arg_indices.as_dyn(),)*
+                        #(::embers_transpile::__private::TupleOfExpressionHandles::project_as_dyn(&args, #arg_indices),)*
+                        // the function data is passed as last argument, as expected by closures.
+                        // for normal functions this will be an empty type, since Self doesn't have a naga type.
+                        func.as_dyn()
+                    ],
+                )
+            }
+        }
+    };
+
     // generate the expression that returns a Return<Output> (the function
     // generator)
-    let create_function = quote! {
-        #rebind_self
-        ::embers_transpile::__private::return_function_with_closure(
-            (#args_as_expression_handles), // we pass this so the return_function_with_closure can infer the type for Args
-            move |mut _block_builder, _args| {
-                #bind_args
-                #body
-                let _output = ::embers_transpile::__private::AsExpression::as_expression(&#output_expr, _block_builder)?;
-                Ok(_output.as_dyn())
-            },
-            move |_function_builder, _body_generator| {
-                _function_builder.add_name(#func_name_lit);
-                let mut _args = ::embers_transpile::__private::Vec::new();
-                #collect_args
-                _function_builder.add_output::<#output_type>()?;
-                let mut _block_builder = _function_builder.block();
-                _body_generator(&mut _block_builder, _args)?;
-                _block_builder.finish_root();
-                Ok(())
-            }
-        )
+    let fn_item = quote! {
+        {
+            #function_type
+
+            #rebind_self
+            ::embers_transpile::__private::GeneratorFnItem::new_with_type(
+                &AnonymousFunctionType::new(
+                    &(#args_as_expression_handles)
+                ),
+                ::embers_transpile::__private::CallbackGenerator::new(
+                    move |
+                        mut _block_builder: &mut ::embers_transpile::__private::BlockBuilder,
+                        _args: ::embers_transpile::__private::Vec<::embers_transpile::__private::DynFnInputBinding>,
+                    | {
+                        #bind_args
+                        #body
+                        let _output = ::embers_transpile::__private::AsExpression::as_expression(&#output_expr, _block_builder)?;
+                        Ok(_output.as_dyn())
+                    },
+                    move |_function_builder, _body_generator| {
+                        _function_builder.add_name(#func_name_lit);
+                        let mut _args = ::embers_transpile::__private::Vec::new();
+                        #collect_args
+                        _function_builder.add_output::<#output_type>()?;
+                        let mut _block_builder = _function_builder.block();
+                        _body_generator(&mut _block_builder, _args)?;
+                        _block_builder.finish_root();
+                        Ok(())
+                    }
+                )
+            )
+        }
     };
 
     let output = if attrs.entrypoint {
+        // todo: we could just return an impl FnItemEntryPoint instead, but we create a
+        // "expanded" fn_item that also contains the globals
         let generics = &sig.generics;
         quote! {
             #vis fn #ident #generics () -> ::embers_transpile::__private::Result<::embers_transpile::__private::Module, ::embers_transpile::__private::BuilderError> {
                 #entrypoint_create_args
+
                 let mut module_builder = ::embers_transpile::__private::ModuleBuilder::default();
+
                 #entrypoint_add_globals
-                let function: ::embers_transpile::__private::Return<::embers_transpile::__private::Unit> = #create_function;
-                module_builder.add_entrypoint(
-                    function.generator,
-                )?;
+
+                let fn_item = #fn_item;
+                ::embers_transpile::__private::FnItemEntryPoint::register_entrypoint(fn_item, &mut module_builder)?;
+
                 let module = module_builder.build();
                 Ok(module)
             }
@@ -433,7 +497,7 @@ fn process_function(
     else {
         quote! {
             #vis #new_sig {
-                #create_function
+                #fn_item
             }
         }
     };
@@ -597,8 +661,15 @@ impl SignatureTransform {
 
         let generics = &sig.generics;
 
-        let new_sig = quote! {
-            fn #ident #generics (#(#input_sig),*) -> ::embers_transpile::__private::Return<#output_type>
+        let new_sig = if entry_point {
+            quote! {
+                fn #ident #generics () -> ::embers_transpile::__private::Result<::embers_transpile::__private::Module, ::embers_transpile::__private::BuilderError>
+            }
+        }
+        else {
+            quote! {
+                fn #ident #generics (#(#input_sig),*) -> impl ::embers_transpile::__private::FnItem<Output = #output_type>
+            }
         };
 
         Ok(Self {
