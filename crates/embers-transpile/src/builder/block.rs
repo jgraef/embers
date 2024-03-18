@@ -18,6 +18,7 @@ use super::{
         TypeHandle,
     },
 };
+use crate::__private::DynFnInputBinding;
 
 pub struct BlockBuilder<'m, 'f> {
     pub function_builder: &'f mut FunctionBuilder<'m>,
@@ -59,11 +60,16 @@ impl<'m, 'f> BlockBuilder<'m, 'f> {
     }
     */
 
-    pub fn add_call<R: 'static>(
+    pub fn add_call<F: 'static, R: 'static>(
         &mut self,
-        naga_func: Handle<Function>,
         arguments: impl IntoIterator<Item = DynExpressionHandle>,
     ) -> Result<ExpressionHandle<R>, BuilderError> {
+        let naga_func = self
+            .function_builder
+            .module_builder
+            .get_type::<F>()?
+            .try_get_code()?;
+
         let ret_type = self.function_builder.module_builder.get_type::<R>()?;
 
         let ret = if ret_type.is_zero_sized() {
@@ -86,6 +92,30 @@ impl<'m, 'f> BlockBuilder<'m, 'f> {
         })?;
 
         Ok(ret)
+    }
+
+    pub fn add_call_inline<F: 'static, R: 'static>(
+        &mut self,
+        arguments: impl IntoIterator<Item = DynExpressionHandle>,
+    ) -> Result<ExpressionHandle<R>, BuilderError> {
+        let generator = self
+            .function_builder
+            .module_builder
+            .get_function_generator::<F>()?;
+
+        let args = arguments
+            .into_iter()
+            .map(|dyn_handle| DynFnInputBinding::Expression { dyn_handle })
+            .collect();
+
+        let mut inline_block = BlockBuilder::new(&mut self.function_builder);
+        let output = generator.generate_body(&mut inline_block, args)?;
+        let block = inline_block.finish();
+        if !block.is_empty() {
+            self.add_statement(Statement::Block(block))?;
+        }
+
+        Ok(ExpressionHandle::from_dyn(output))
     }
 
     fn finish_inner(self) -> (Block, &'f mut FunctionBuilder<'m>) {

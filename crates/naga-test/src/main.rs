@@ -1,6 +1,5 @@
 #![feature(arbitrary_self_types, generic_const_exprs)]
 #![allow(dead_code, incomplete_features)]
-mod mock;
 mod scratch;
 
 use std::{
@@ -170,15 +169,16 @@ mod shader {
 
 #[transpile]
 mod test {
-    pub fn bar() {
-        //0u32
+    #[transpile(inline)]
+    pub fn foo(a: u32, b: u32) -> u32 {
+        //a + b
+        42u32
     }
 
     #[transpile(entrypoint)]
     pub fn test(#[transpile(builtin(global_invocation_id))] global_id: vec3<u32>) {
         //let x = 42u32 + global_id.x;
-        //foo(1u32, 2u32);
-        bar();
+        let mut c = foo(1u32, 2u32);
         //let x = bar;
     }
 }

@@ -4,6 +4,7 @@ use std::{
         TypeId,
     },
     collections::HashMap,
+    sync::Arc,
 };
 
 use naga::{
@@ -46,7 +47,7 @@ pub struct ModuleBuilder {
     pub(super) types: UniqueArena<Type>,
     pub(super) struct_fields: HashMap<TypeId, Vec<Option<u32>>>,
     pub(super) functions: Arena<Function>,
-    function_generators: HashMap<TypeId, Box<dyn GenerateFunction>>,
+    function_generators: HashMap<TypeId, Arc<dyn GenerateFunction>>,
     entry_points: Vec<EntryPoint>,
     global_variables: Arena<naga::GlobalVariable>,
     global_variable_by_type_id: HashMap<String, GlobalVariableHandle>,
@@ -112,9 +113,9 @@ impl ModuleBuilder {
         }
     }
 
-    pub fn add_function<F: ?Sized + 'static>(
+    pub fn add_function<F: ?Sized + 'static, G: GenerateFunction>(
         &mut self,
-        generator: Box<dyn GenerateFunction>,
+        generator: G,
     ) -> Result<TypeHandle, BuilderError> {
         let type_id = TypeId::of::<F>();
 
@@ -131,17 +132,18 @@ impl ModuleBuilder {
             let handle = handle.into();
 
             self.by_type_id.insert(type_id, handle);
-            self.function_generators.insert(type_id, generator);
+            self.function_generators
+                .insert(type_id, Arc::new(generator));
 
             Ok(handle)
         }
     }
-    pub fn add_function_for<F: ?Sized + 'static>(
+    pub fn add_function_for<F: ?Sized + 'static, G: GenerateFunction>(
         &mut self,
         _type_of: &F,
-        generator: Box<dyn GenerateFunction>,
+        generator: G,
     ) -> Result<TypeHandle, BuilderError> {
-        self.add_function::<F>(generator)
+        self.add_function::<F, _>(generator)
     }
 
     pub fn get_type<T: 'static>(&mut self) -> Result<TypeHandle, BuilderError> {
@@ -151,6 +153,20 @@ impl ModuleBuilder {
                 name: type_name::<T>().to_owned(),
             }
         })
+    }
+
+    pub fn get_function_generator<F: 'static>(
+        &self,
+    ) -> Result<Arc<dyn GenerateFunction>, BuilderError> {
+        let generator = self
+            .function_generators
+            .get(&TypeId::of::<F>())
+            .ok_or_else(|| {
+                BuilderError::TypeNotFound {
+                    name: type_name::<F>().to_owned(),
+                }
+            })?;
+        Ok(generator.clone())
     }
 
     pub fn add_entrypoint<G: GenerateFunction>(&mut self, gen: G) -> Result<(), BuilderError> {

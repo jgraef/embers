@@ -142,6 +142,23 @@ pub trait GenerateFunction: 'static {
         -> Result<(), BuilderError>;
 }
 
+impl<G: GenerateFunction> GenerateFunction for Box<G> {
+    fn generate_body(
+        &self,
+        block_builder: &mut BlockBuilder,
+        args: Vec<DynFnInputBinding>,
+    ) -> Result<DynExpressionHandle, BuilderError> {
+        self.deref().generate_body(block_builder, args)
+    }
+
+    fn generate_function(
+        &self,
+        function_builder: &mut FunctionBuilder,
+    ) -> Result<(), BuilderError> {
+        self.deref().generate_function(function_builder)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct NoSelf;
 
@@ -245,47 +262,6 @@ impl<
         (self.function_generator)(function_builder, &self.body_generator)
     }
 }
-
-/*
-pub struct GeneratorFnItem<T: ?Sized, G> {
-    generator: G,
-    _type: PhantomData<T>,
-}
-
-impl<T: ?Sized, G> GeneratorFnItem<T, G> {
-    pub fn new(generator: G) -> Self {
-        Self {
-            generator,
-            _type: PhantomData,
-        }
-    }
-
-    pub fn new_with_type(_: &T, generator: G) -> Self {
-        Self::new(generator)
-    }
-}
-
-impl<T: FunctionTrait + ?Sized + 'static, G: GenerateFunction> FnItem for GeneratorFnItem<T, G> {
-    type FunctionType = T;
-    type Output = <T as FunctionTrait>::Output;
-
-    fn get_function_expression(
-        self,
-        module_builder: &mut ModuleBuilder,
-    ) -> Result<ExpressionHandle<Self::FunctionType>, BuilderError> {
-        module_builder.add_function::<T>(Box::new(self.generator))?;
-        Ok(ExpressionHandle::empty())
-    }
-}
-
-impl<T: FunctionTrait<Output = Unit> + ?Sized + 'static, G: GenerateFunction> FnItemEntryPoint
-    for GeneratorFnItem<T, G>
-{
-    fn register_entrypoint(self, module_builder: &mut ModuleBuilder) -> Result<(), BuilderError> {
-        module_builder.add_entrypoint(self.generator)
-    }
-}
-*/
 
 pub struct FunctionBuilder<'m> {
     pub module_builder: &'m mut ModuleBuilder,

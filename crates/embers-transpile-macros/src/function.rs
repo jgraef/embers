@@ -387,6 +387,12 @@ fn process_function(
         .enumerate()
         .map(|(i, _)| Ident::new(&format!("A{}", i + 1), Span::call_site()))
         .collect::<Vec<_>>();
+    let add_call_method = if attrs.inline {
+        quote! { add_call_inline }
+    }
+    else {
+        quote! { add_call }
+    };
 
     let function_type = quote! {
         struct AnonymousFunctionType<SelfKind, Args, Output> {
@@ -430,13 +436,7 @@ fn process_function(
                 ::embers_transpile::__private::ExpressionHandle<Self::Output>,
                 ::embers_transpile::__private::BuilderError
             > {
-                let naga_func = block_builder
-                    .function_builder
-                    .module_builder
-                    .get_type::<Self>()?
-                    .try_get_code()?;
-                block_builder.add_call::<Output>(
-                    naga_func,
+                block_builder.#add_call_method::<Self, Output>(
                     [
                         #(_args.#arg_indices.as_dyn(),)*
                         // the function data is passed as last argument, as expected by closures.
@@ -465,10 +465,17 @@ fn process_function(
                 #collect_args
                 _function_builder.add_output::<#output_type>()?;
                 let mut _block_builder = _function_builder.block();
-                _body_generator(&mut _block_builder, _args)?;
+                let _output = _body_generator(&mut _block_builder, _args)?;
+                if let Some(_output) = _output.get_naga() {
+                    _block_builder.add_statement(
+                        ::embers_transpile::__private::naga::Statement::Return {
+                            value: Some(_output),
+                        }
+                    )?;
+                }
                 _block_builder.finish_root();
                 Ok(())
-            }
+            },
         )
     };
 
@@ -498,7 +505,7 @@ fn process_function(
 
                 let generator = #generator;
                 let function_type = AnonymousFunctionType::new(_self, args);
-                module_builder.add_function_for(&function_type, Box::new(generator))?;
+                module_builder.add_function_for(&function_type, generator)?;
                 ::embers_transpile::__private::Ok(function_type.expression_handle())
             }
         }
