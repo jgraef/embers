@@ -136,6 +136,13 @@ impl ModuleBuilder {
             Ok(handle)
         }
     }
+    pub fn add_function_for<F: ?Sized + 'static>(
+        &mut self,
+        _type_of: &F,
+        generator: Box<dyn GenerateFunction>,
+    ) -> Result<TypeHandle, BuilderError> {
+        self.add_function::<F>(generator)
+    }
 
     pub fn get_type<T: 'static>(&mut self) -> Result<TypeHandle, BuilderError> {
         let type_id = TypeId::of::<T>();

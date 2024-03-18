@@ -57,10 +57,11 @@ binary_assign_trait!(BitOrAssign, bitor_assign);
 binary_assign_trait!(BitXorAssign, bitxor_assign);
 binary_assign_trait!(ShlAssign, shl_assign);
 binary_assign_trait!(ShrAssign, shr_assign);
-
+/*
 #[transpile]
 pub trait Index<Idx: ShaderType>: ShaderType {
     type Output: ShaderType;
 
     fn index(self, index: Idx) -> Self::Output;
 }
+*/

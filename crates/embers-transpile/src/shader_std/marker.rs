@@ -38,9 +38,3 @@ impl<T: 'static> crate::shader_std::default::Default for PhantomData<T> {
         }
     }
 }
-
-crate::utils::sealed_trait!();
-pub trait TupleOfExpressionHandles: Sealed {
-    fn project_as_dyn(&self, index: usize) -> DynExpressionHandle;
-}
-embers_transpile_macros::impl_tuple_of_expression_handles!(32);

@@ -18,7 +18,6 @@ use super::{
     },
     pointer::{
         address_space,
-        AddressSpace,
         AsPointer,
         Pointer,
     },

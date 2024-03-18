@@ -32,17 +32,16 @@ pub use crate::{
         },
         function::{
             Argument,
+            Arguments,
             CallbackGenerator,
             DynFnInputBinding,
-            FnItem,
-            FnItemEntryPoint,
             FunctionBuilder,
             FunctionTrait,
             GenerateFunction,
-            GeneratorFnItem,
-            MaybeSelf,
+            MaybeTakesSelf,
+            NoSelf,
             SelfArgument,
-            SelfPointerArgument,
+            TupleOfExpressionHandles,
         },
         literal::{
             AnyFloat,
@@ -82,7 +81,6 @@ pub use crate::{
     },
     shader_std::{
         self,
-        marker::TupleOfExpressionHandles,
         types::{
             array::{
                 Array,

@@ -1,7 +1,4 @@
-use proc_macro2::{
-    Span,
-    TokenStream,
-};
+use proc_macro2::TokenStream;
 use quote::{
     quote,
     ToTokens,
@@ -196,9 +193,7 @@ pub fn process_expr(
         Expr::Block(block) => {
             assert!(block.attrs.is_empty());
             assert!(block.label.is_none());
-            let mut block_output = TokenBuffer::default();
-            let var = name_gen.tmp_var("block");
-            crate::function::process_block(&block.block, &mut block_output, name_gen)?
+            crate::function::process_block(&block.block, output, name_gen)?
         }
         Expr::Break(_brk) => todo!("process_expr -> Expr::Break"),
         Expr::Call(call) => {

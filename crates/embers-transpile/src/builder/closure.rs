@@ -20,13 +20,6 @@ use super::{
     },
     r#type::TypeHandle,
 };
-use crate::{
-    __private::{
-        AsExpression,
-        ExpressionHandle,
-    },
-    shader_std::marker::TupleOfExpressionHandles,
-};
 
 /*
 struct Closure<Body, Args, Output> {

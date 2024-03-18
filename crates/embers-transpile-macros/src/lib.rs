@@ -13,26 +13,13 @@ mod utils;
 
 use darling::ast::NestedMeta;
 use proc_macro::TokenStream;
-use proc_macro2::Span;
 use proc_macro_error::proc_macro_error;
-use quote::{
-    quote,
-    ToTokens,
-};
 use syn::{
     parse_macro_input,
-    Ident,
     Item,
-    LitInt,
 };
 
-use crate::{
-    error::Error,
-    utils::{
-        NameGen,
-        TokenBuffer,
-    },
-};
+use crate::utils::NameGen;
 
 #[proc_macro_error]
 #[proc_macro_attribute]
@@ -57,8 +44,8 @@ pub fn transpile(attrs: TokenStream, input: TokenStream) -> TokenStream {
 
 #[proc_macro_error]
 #[proc_macro]
-pub fn impl_tuple_of_expression_handles(input: TokenStream) -> TokenStream {
-    match helpers::impl_tuple_of_expression_handles(input.into()) {
+pub fn internal_impl_arguments(input: TokenStream) -> TokenStream {
+    match helpers::internal_impl_arguments(input.into()) {
         Ok(output) => output.into(),
         Err(e) => e.write_errors().into(),
     }
