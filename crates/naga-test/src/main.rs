@@ -169,17 +169,28 @@ mod shader {
 
 #[transpile]
 mod test {
+    pub trait MyTrait {
+        fn do_something(self) -> u32;
+    }
+
+    impl MyTrait for u32 {
+        fn do_something(self) -> u32 {
+            self
+        }
+    }
+
     #[transpile(inline)]
-    pub fn foo(a: u32, b: u32) -> u32 {
-        //a + b
-        42u32
+    pub fn foo<T: MyTrait + ShaderType>(x: T) {
+        //x.do_something();
     }
 
     #[transpile(entrypoint)]
     pub fn test(#[transpile(builtin(global_invocation_id))] global_id: vec3<u32>) {
         //let x = 42u32 + global_id.x;
-        let mut c = foo(1u32, 2u32);
+        //let mut c = foo(1u32, 2u32);
         //let x = bar;
+        //foo(1u32);
+        <u32 as shader_std::ops::Add::<u32>>::add(1u32, 2u32);
     }
 }
 

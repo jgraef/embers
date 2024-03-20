@@ -1,16 +1,12 @@
+use std::ops::Deref;
+
 use proc_macro2::TokenStream;
 use quote::{
     quote,
     ToTokens,
 };
 use syn::{
-    spanned::Spanned,
-    BinOp,
-    Expr,
-    Ident,
-    Member,
-    Path,
-    UnOp,
+    spanned::Spanned, BinOp, Expr, Ident, Member, PatPath, Path, UnOp, ExprPath,
 };
 
 use crate::{
@@ -25,11 +21,11 @@ use crate::{
 #[must_use]
 pub enum ExprOut {
     Ident(Ident),
-    Path(Path),
+    Path(ExprPath),
 }
 
-impl From<Path> for ExprOut {
-    fn from(path: Path) -> Self {
+impl From<ExprPath> for ExprOut {
+    fn from(path: ExprPath) -> Self {
         Self::Path(path)
     }
 }
@@ -58,99 +54,44 @@ pub fn process_expr(
     output: &mut TokenBuffer,
     name_gen: &mut NameGen,
 ) -> Result<ExprOut, Error> {
-    fn emit_func_call(
-        output: &mut TokenBuffer,
-        name_gen: &mut NameGen,
-        func: impl ToTokens,
-        args: &[ExprOut],
-    ) -> ExprOut {
-        let out = name_gen.tmp_var("callres");
-        let mut arg_binds = vec![];
-        let mut arg_names = vec![];
-
-        for (i, arg) in args.iter().enumerate() {
-            let bind = name_gen.tmp_var("arg");
-            arg_binds.push(quote!{
-                let #bind = ::embers_transpile::__private::AsExpression::as_expression(&#arg, &mut _block_builder)?;
-            });
-            if i == 0 {
-                arg_binds.push(quote! {
-                    let #bind = ::embers_transpile::__private::Into::into(#bind);
-                });
-            }
-            arg_names.push(bind);
-        }
-
-        output.push(quote! {
-            let #out = {
-                #(#arg_binds)*
-                let _gen = #func(#(#arg_names),*);
-                ::embers_transpile::__private::GenerateCall::call(&_gen, &mut _block_builder)?
-            };
+    fn emit_func_call<'a>(func: impl ToTokens, args: impl IntoIterator<Item = &'a Expr>, output: &mut TokenBuffer, name_gen: &mut NameGen) -> Result<ExprOut, Error> {
+        let func_var = name_gen.tmp_var("func");
+        output.push(quote!{
+            let #func_var = embers_transpile::__private::AsExpression::as_expression(&#func, &mut _block_builder)?;
         });
 
-        ExprOut::from(out)
-    }
-
-    fn emit_method_call(
-        output: &mut TokenBuffer,
-        name_gen: &mut NameGen,
-        receiver: ExprOut,
-        method: &Ident,
-        args: &[ExprOut],
-    ) -> ExprOut {
-        let out = name_gen.tmp_var("callres");
-        let mut arg_binds = vec![];
-        let mut arg_names = vec![];
-
-        for (i, arg) in args.iter().enumerate() {
-            let bind = name_gen.tmp_var("arg");
-            arg_binds.push(quote!{
-                let #bind = ::embers_transpile::__private::AsExpression::as_expression(&#arg, &mut _block_builder)?;
+        let mut arg_vars = vec![];
+        for arg in args {
+            let arg = process_expr(arg, output, name_gen)?;
+            let arg_var = name_gen.tmp_var("arg");
+            output.push(quote!{
+                let #arg_var = embers_transpile::__private::AsExpression::as_expression(&#arg, &mut _block_builder)?;
             });
-            if i == 0 {
-                arg_binds.push(quote! {
-                    let #bind = ::embers_transpile::__private::Into::into(#bind);
-                });
-            }
-            arg_names.push(bind);
+            arg_vars.push(arg_var);
         }
 
+        let result_var = name_gen.tmp_var("result");
         output.push(quote! {
-            let #out = {
-                #(#arg_binds)*
-                let #receiver = ::embers_transpile::__private::AsExpression::as_expression(&#receiver, &mut _block_builder)?;
-                let _gen = ::embers_transpile::__private::PhantomReceiverPointer::from(#receiver).#method((#(#args),*));
-                ::embers_transpile::__private::GenerateCall::call(&_gen, _block_builder)?
-            };
+            let #result_var = #func_var.call((#(#arg_vars,)*), &mut _block_builder)?;
         });
 
-        ExprOut::from(out)
+        Ok(result_var.into())
     }
 
     macro_rules! emit_func_call_std {
         ($func_path:path, $($args:expr),*) => {{
-            let args = &[$($args),*];
-            emit_func_call(output, name_gen, quote!{ ::embers_transpile::__private::shader_std::$func_path }, args)
+            let _args = [$($args),*].into_iter().map(Deref::deref);
+            emit_func_call(quote!{ ::embers_transpile::__private::shader_std::$func_path }, _args, output, name_gen)
         }};
-    }
-
-    fn emit_func_call_to_expr(
-        output: &mut TokenBuffer,
-        name_gen: &mut NameGen,
-        func: ExprOut,
-        args: &[ExprOut],
-    ) -> ExprOut {
-        emit_func_call(output, name_gen, quote! { #func }, args)
     }
 
     let expr_out = match input {
         Expr::Assign(_assign) => todo!("process_expr -> Expr::Assign"),
         Expr::Binary(binary) => {
-            let left = process_expr(&binary.left, output, name_gen)?;
-            let right = process_expr(&binary.right, output, name_gen)?;
+            let left = &binary.left;
+            let right = &binary.right;
 
-            let out = match &binary.op {
+            let out_result = match &binary.op {
                 BinOp::Add(_) => emit_func_call_std!(ops::Add::add, left, right),
                 BinOp::Sub(_) => emit_func_call_std!(ops::Sub::sub, left, right),
                 BinOp::Mul(_) => emit_func_call_std!(ops::Mul::mul, left, right),
@@ -188,7 +129,7 @@ pub fn process_expr(
                 _ => todo!(),
             };
 
-            out.into()
+            out_result?.into()
         }
         Expr::Block(block) => {
             assert!(block.attrs.is_empty());
@@ -197,28 +138,8 @@ pub fn process_expr(
         }
         Expr::Break(_brk) => todo!("process_expr -> Expr::Break"),
         Expr::Call(call) => {
-            let func = &call.func;
-            let func_var = process_expr(func, output, name_gen)?;
-            output.push(quote!{
-                let #func_var = embers_transpile::__private::AsExpression::as_expression(&#func, &mut _block_builder)?;
-            });
-
-            let mut arg_vars = vec![];
-            for arg in &call.args {
-                let arg = process_expr(arg, output, name_gen)?;
-                let arg_var = name_gen.tmp_var("arg");
-                output.push(quote!{
-                    let #arg_var = embers_transpile::__private::AsExpression::as_expression(&#arg, &mut _block_builder)?;
-                });
-                arg_vars.push(arg_var);
-            }
-
-            let result_var = name_gen.tmp_var("result");
-            output.push(quote! {
-                let #result_var = #func_var.call((#(#arg_vars,)*), &mut _block_builder)?;
-            });
-
-            result_var.into()
+            let func = process_expr(&call.func, output, name_gen)?;
+            emit_func_call(func, &call.args, output, name_gen)?
         }
         Expr::Cast(_cast) => todo!("process_expr -> Expr::Cast"),
         Expr::Closure(closure) => crate::closure::process_closure(closure, output, name_gen)?,
@@ -307,7 +228,7 @@ pub fn process_expr(
                 Ident::new("_self", path.span()).into()
             }
             else {
-                path.path.clone().into()
+                path.clone().into()
             }
         }
         Expr::Reference(ref_) => {
@@ -385,13 +306,11 @@ pub fn process_expr(
                     out.into()
                 }
                 UnOp::Not(_) => {
-                    let arg = process_expr(&unary.expr, output, name_gen)?;
-                    let out = emit_func_call_std!(ops::Not::not, arg);
+                    let out = emit_func_call_std!(ops::Not::not, &unary.expr)?;
                     out.into()
                 }
                 UnOp::Neg(_) => {
-                    let arg = process_expr(&unary.expr, output, name_gen)?;
-                    let out = emit_func_call_std!(ops::Neg::neg, arg);
+                    let out = emit_func_call_std!(ops::Neg::neg, &unary.expr)?;
                     out.into()
                 }
                 _ => todo!(),
